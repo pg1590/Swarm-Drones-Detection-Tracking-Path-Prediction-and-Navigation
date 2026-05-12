@@ -1,0 +1,251 @@
+from env import PursuitEnv
+
+from mappo_agent import MAPPO
+
+from rollout_buffer import RolloutBuffer
+
+import torch
+import numpy as np
+
+
+# ------------------------------------------------
+# Training Hyperparameters
+# ------------------------------------------------
+
+MAX_EPISODES = 5000
+
+ROLLOUT_STEPS = 2048
+
+PPO_EPOCHS = 6
+
+MINI_BATCH_SIZE = 256
+
+
+def main():
+
+    env = PursuitEnv()
+
+    # ------------------------------------------------
+    # Dimensions
+    # ------------------------------------------------
+
+    obs_dim = len(env.reset()["p1"])
+
+    global_state_dim = len(
+        env.get_global_state()
+    )
+
+    action_dim = 2
+
+    # ------------------------------------------------
+    # MAPPO Agent
+    # ------------------------------------------------
+
+    agent = MAPPO(
+        obs_dim=obs_dim,
+        global_state_dim=global_state_dim,
+        action_dim=action_dim
+    )
+
+    # ------------------------------------------------
+    # Rollout Buffer
+    # ------------------------------------------------
+
+    buffer = RolloutBuffer()
+
+    success_count = 0
+
+    total_steps = 0
+
+    for episode in range(MAX_EPISODES):
+
+        observations = env.reset()
+
+        done = False
+
+        episode_reward = 0
+
+        while not done:
+
+            # ----------------------------------------
+            # Local observations
+            # ----------------------------------------
+
+            obs1 = observations["p1"]
+
+            obs2 = observations["p2"]
+
+            # ----------------------------------------
+            # Centralized critic state
+            # ----------------------------------------
+
+            global_state = env.get_global_state()
+
+            # ----------------------------------------
+            # Shared Actor Actions
+            # ----------------------------------------
+
+            action1, logprob1 = (
+                agent.select_action(obs1)
+            )
+
+            action2, logprob2 = (
+                agent.select_action(obs2)
+            )
+
+            # ----------------------------------------
+            # Critic Value
+            # ----------------------------------------
+
+            with torch.no_grad():
+
+                value = agent.critic(
+                    torch.FloatTensor(
+                        global_state
+                    ).unsqueeze(0)
+                ).item()
+
+            # ----------------------------------------
+            # Environment step
+            # ----------------------------------------
+
+            next_observations, reward, done = env.step(
+                action1,
+                action2
+            )
+
+            # ----------------------------------------
+            # Store BOTH agents separately
+            # ----------------------------------------
+
+            buffer.store(
+                obs1,
+                global_state,
+                action1,
+                logprob1,
+                reward,
+                done,
+                value
+            )
+
+            buffer.store(
+                obs2,
+                global_state,
+                action2,
+                logprob2,
+                reward,
+                done,
+                value
+            )
+
+            observations = next_observations
+
+            episode_reward += reward
+
+            total_steps += 1
+
+            # ----------------------------------------
+            # PPO Update
+            # ----------------------------------------
+
+            if total_steps % ROLLOUT_STEPS == 0:
+
+                data = buffer.get()
+
+                # ------------------------------
+                # Bootstrap next state value
+                # ------------------------------
+
+                with torch.no_grad():
+
+                    next_global_state = (
+                        env.get_global_state()
+                    )
+
+                    next_value = agent.critic(
+                        torch.FloatTensor(
+                            next_global_state
+                        ).unsqueeze(0)
+                    ).item()
+
+                # ------------------------------
+                # Compute GAE
+                # ------------------------------
+
+                advantages, returns = (
+                    agent.compute_gae(
+                        rewards=data["rewards"],
+                        values=list(data["values"]),
+                        dones=data["dones"],
+                        next_value=next_value
+                    )
+                )
+
+                # ------------------------------
+                # PPO Update
+                # ------------------------------
+
+                agent.update(
+                    obs_batch=data["obs"],
+
+                    global_state_batch=data[
+                        "global_states"
+                    ],
+
+                    action_batch=data[
+                        "actions"
+                    ],
+
+                    old_logprob_batch=data[
+                        "log_probs"
+                    ],
+
+                    returns_batch=returns,
+
+                    advantage_batch=advantages,
+
+                    epochs=PPO_EPOCHS,
+
+                    batch_size=MINI_BATCH_SIZE
+                )
+
+                buffer.clear()
+
+        # ----------------------------------------
+        # Success tracking
+        # ----------------------------------------
+
+        if env.capture:
+            success_count += 1
+
+        # ----------------------------------------
+        # Logging
+        # ----------------------------------------
+
+        if episode % 20 == 0:
+
+            print("=" * 50)
+
+            print(f"Episode: {episode}")
+
+            print(
+                f"Reward: {episode_reward:.2f}"
+            )
+
+            print(
+                f"Success Rate: "
+                f"{success_count/(episode+1):.3f}"
+            )
+
+            print(
+                f"Total Steps: {total_steps}"
+            )
+
+            print("=" * 50)
+
+    print("Training Complete")
+
+
+if __name__ == "__main__":
+
+    main()
