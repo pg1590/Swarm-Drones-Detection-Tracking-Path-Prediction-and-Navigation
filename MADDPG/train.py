@@ -11,7 +11,7 @@ BATCH_SIZE = 256
 def main():
 
     env = PursuitEnv()
-    state_dim = 15
+    state_dim = 18
     action_dim = 3
 
     agent = MADDPG(state_dim, action_dim)
@@ -31,28 +31,30 @@ def main():
             p2_pos = states["p2"]
             e_pos = states["evader"]
 
-            s1 = build_joint_state(p1_pos, env.p1_vel,
-                                   p2_pos, env.p2_vel,
-                                   e_pos)
+            s1 = build_joint_state(
+                    p1_pos, env.p1_vel,
+                    p2_pos, env.p2_vel,
+                    e_pos, env.evader_vel
+                )
+            s2 = build_joint_state(
+                p2_pos, env.p2_vel,
+                p1_pos, env.p1_vel,
+                e_pos, env.evader_vel
+            )
 
-            s2 = build_joint_state(p2_pos, env.p2_vel,
-                                   p1_pos, env.p1_vel,
-                                   e_pos)
-
-            a1 = agent.select_action(s1)
-            a2 = agent.select_action(s2)
-
+            a1 = agent.select_action(s1, agent_id=1)
+            a2 = agent.select_action(s2, agent_id=2)
             next_states, rewards, done = env.step(a1, a2, np.zeros(3))
 
             r = rewards[0]  # shared reward assumption
 
             next_s1 = build_joint_state(next_states["p1"], env.p1_vel,
                                         next_states["p2"], env.p2_vel,
-                                        next_states["evader"])
+                                        next_states["evader"],env.evader_vel)
 
             next_s2 = build_joint_state(next_states["p2"], env.p2_vel,
                                         next_states["p1"], env.p1_vel,
-                                        next_states["evader"])
+                                        next_states["evader"],env.evader_vel)
 
             buffer.push(s1, s2, a1, a2, r, next_s1, next_s2, done)
 

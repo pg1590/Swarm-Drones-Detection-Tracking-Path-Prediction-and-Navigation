@@ -81,17 +81,63 @@ class PursuitEnv:
         d1 = np.linalg.norm(self.p1_pos - self.evader_pos)
         d2 = np.linalg.norm(self.p2_pos - self.evader_pos)
 
-        # Distance shaping (small)
-        r = -0.1 * (d1 + d2)
+        # -----------------------------
+        # 1. Distance shaping
+        # -----------------------------
+        r_dist = -0.05 * (d1 + d2)
+
+        # -----------------------------
+        # 2. Anti-clustering reward
+        # Encourage pursuers to spread
+        # -----------------------------
+        pursuer_sep = np.linalg.norm(self.p1_pos - self.p2_pos)
+
+        r_sep = 0.1 * np.clip(pursuer_sep, 0, 10)
+
+        # -----------------------------
+        # 3. Angular enclosure reward
+        # Encourage target to lie
+        # between pursuers
+        # -----------------------------
+        v1 = self.p1_pos - self.evader_pos
+        v2 = self.p2_pos - self.evader_pos
+
+        v1_norm = v1 / (np.linalg.norm(v1) + 1e-6)
+        v2_norm = v2 / (np.linalg.norm(v2) + 1e-6)
+
+        dot = np.dot(v1_norm, v2_norm)
+
+        # dot = -1 means 180 degrees
+        r_angle = -0.5 * dot
+
+        # -----------------------------
+        # 4. Interception reward
+        # Predict future target position
+        # -----------------------------
+        pred_target = self.evader_pos + 2.0 * self.evader_vel
+
+        d1_pred = np.linalg.norm(self.p1_pos - pred_target)
+        d2_pred = np.linalg.norm(self.p2_pos - pred_target)
+
+        r_intercept = -0.03 * (d1_pred + d2_pred)
+
+        # -----------------------------
+        # Total reward
+        # -----------------------------
+        r = r_dist + r_sep + r_angle + r_intercept
 
         done = False
 
-        # Capture condition
+        # -----------------------------
+        # Capture reward
+        # -----------------------------
         if d1 < self.capture_radius or d2 < self.capture_radius:
-            r += 200
+            r += 300
             done = True
 
-        # Episode timeout
+        # -----------------------------
+        # Timeout
+        # -----------------------------
         if self.step_count >= self.max_steps:
             done = True
 
