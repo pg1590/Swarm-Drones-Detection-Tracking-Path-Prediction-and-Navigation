@@ -7,7 +7,7 @@ class PursuitEnv:
         self.max_steps = 200
         self.capture_radius = 1.5
         self.world_limit = 10.0
-
+        self.total_episodes = 0
         self.max_speed = 1.0
 
         self.reset()
@@ -24,7 +24,7 @@ class PursuitEnv:
 
         self.step_count = 0
         difficulty = min(1.0, self.total_episodes / 3000)
-        
+
         return self.get_states()
 
     def step(self, a1, a2, a_e=None):

@@ -21,6 +21,7 @@ def main():
     success_count = 0
 
     for episode in range(MAX_EPISODES):
+        env.total_episodes = episode
         agent.noise1.reset()
         agent.noise2.reset()
         states = env.reset()
