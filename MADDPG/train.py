@@ -2,7 +2,8 @@ from env import PursuitEnv
 from maddpg_agent import MADDPG
 from replay_buffer import ReplayBuffer
 from utils import build_joint_state
-
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
 import numpy as np
 
 MAX_EPISODES = 5000
@@ -20,13 +21,22 @@ def main():
     success_count = 0
 
     for episode in range(MAX_EPISODES):
-
+        agent.noise1.reset()
+        agent.noise2.reset()
         states = env.reset()
+        p1_traj = []
+        p2_traj = []
+        evader_traj = []
+
+        separation_history = []
+        angle_history = []
         done = False
         episode_reward = 0
 
         while not done:
-
+            p1_traj.append(env.p1_pos.copy())
+            p2_traj.append(env.p2_pos.copy())
+            evader_traj.append(env.evader_pos.copy())
             p1_pos = states["p1"]
             p2_pos = states["p2"]
             e_pos = states["evader"]
@@ -61,17 +71,134 @@ def main():
             states = next_states
             episode_reward += r
 
-            if len(buffer) > BATCH_SIZE:
+            if len(buffer) > 5000:
                 agent.update(buffer, BATCH_SIZE)
 
-        if rewards[0] > 100:
+            # --------------------------------
+            # Pursuer separation
+            # --------------------------------
+            sep = np.linalg.norm(env.p1_pos - env.p2_pos)
+            separation_history.append(sep)
+
+            # --------------------------------
+            # Angular enclosure
+            # --------------------------------
+            v1 = env.p1_pos - env.evader_pos
+            v2 = env.p2_pos - env.evader_pos
+
+            v1 /= (np.linalg.norm(v1) + 1e-6)
+            v2 /= (np.linalg.norm(v2) + 1e-6)
+
+            dot = np.clip(np.dot(v1, v2), -1.0, 1.0)
+
+            angle = np.degrees(np.arccos(dot))
+
+            angle_history.append(angle)
+
+        d1 = np.linalg.norm(env.p1_pos - env.evader_pos)
+        d2 = np.linalg.norm(env.p2_pos - env.evader_pos)
+
+        if d1 < env.capture_radius or d2 < env.capture_radius:
             success_count += 1
 
-        if episode % 50 == 0:
+        if episode % 500 == 0:
             print(f"Episode {episode}")
             print(f"Reward: {episode_reward:.2f}")
             print(f"Success Rate: {success_count/(episode+1):.3f}")
             print("-"*40)
+            # =====================================
+            # TRAJECTORY VISUALIZATION
+            # =====================================
+
+            p1_traj_np = np.array(p1_traj)
+            p2_traj_np = np.array(p2_traj)
+            evader_traj_np = np.array(evader_traj)
+
+            fig = plt.figure(figsize=(10, 8))
+            ax = fig.add_subplot(111, projection='3d')
+
+            # --------------------------------
+            # Plot trajectories
+            # --------------------------------
+            ax.plot(
+                p1_traj_np[:,0],
+                p1_traj_np[:,1],
+                p1_traj_np[:,2],
+                label='Pursuer 1'
+            )
+
+            ax.plot(
+                p2_traj_np[:,0],
+                p2_traj_np[:,1],
+                p2_traj_np[:,2],
+                label='Pursuer 2'
+            )
+
+            ax.plot(
+                evader_traj_np[:,0],
+                evader_traj_np[:,1],
+                evader_traj_np[:,2],
+                label='Evader'
+            )
+
+            # --------------------------------
+            # Start points
+            # --------------------------------
+            ax.scatter(
+                p1_traj_np[0,0],
+                p1_traj_np[0,1],
+                p1_traj_np[0,2],
+                s=80
+            )
+
+            ax.scatter(
+                p2_traj_np[0,0],
+                p2_traj_np[0,1],
+                p2_traj_np[0,2],
+                s=80
+            )
+
+            ax.scatter(
+                evader_traj_np[0,0],
+                evader_traj_np[0,1],
+                evader_traj_np[0,2],
+                s=80
+            )
+
+            # --------------------------------
+            # Labels
+            # --------------------------------
+            ax.set_title(f"Episode {episode}")
+            ax.set_xlabel("X")
+            ax.set_ylabel("Y")
+            ax.set_zlabel("Z")
+
+            ax.legend()
+
+            plt.show()
+            # =====================================
+            # SEPARATION + ANGLE PLOTS
+            # =====================================
+
+            fig2, axarr = plt.subplots(2, 1, figsize=(8, 6))
+
+            # --------------------------------
+            # Separation
+            # --------------------------------
+            axarr[0].plot(separation_history)
+            axarr[0].set_title("Pursuer Separation")
+            axarr[0].set_ylabel("Distance")
+
+            # --------------------------------
+            # Enclosure angle
+            # --------------------------------
+            axarr[1].plot(angle_history)
+            axarr[1].set_title("Enclosure Angle")
+            axarr[1].set_ylabel("Degrees")
+            axarr[1].set_xlabel("Timestep")
+
+            plt.tight_layout()
+            plt.show()
 
     print("Training complete.")
 

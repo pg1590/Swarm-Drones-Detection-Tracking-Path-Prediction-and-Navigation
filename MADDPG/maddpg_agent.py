@@ -3,6 +3,34 @@ import torch.nn.functional as F
 import numpy as np
 import copy
 
+class OUNoise:
+    def __init__(self,
+                 action_dim,
+                 mu=0.0,
+                 theta=0.15,
+                 sigma=0.2):
+
+        self.action_dim = action_dim
+        self.mu = mu
+        self.theta = theta
+        self.sigma = sigma
+
+        self.state = np.ones(self.action_dim) * self.mu
+
+    def reset(self):
+        self.state = np.ones(self.action_dim) * self.mu
+
+    def sample(self):
+
+        dx = (
+            self.theta * (self.mu - self.state)
+            + self.sigma * np.random.randn(self.action_dim)
+        )
+
+        self.state += dx
+
+        return self.state
+    
 from actor import Actor
 from critic import Critic
 
@@ -41,17 +69,23 @@ class MADDPG:
 
         self.gamma = 0.95
         self.tau = 0.01
+        # OU Noise for exploration
+        self.noise1 = OUNoise(action_dim)
+        self.noise2 = OUNoise(action_dim)
 
-    def select_action(self, state, agent_id, noise_std=0.1):
+    def select_action(self, state, agent_id):
 
         state = torch.FloatTensor(state).unsqueeze(0)
 
         if agent_id == 1:
             action = self.actor1(state).detach().numpy()[0]
+            noise = self.noise1.sample()
+
         else:
             action = self.actor2(state).detach().numpy()[0]
+            noise = self.noise2.sample()
 
-        action += noise_std * np.random.randn(len(action))
+        action = action + noise
 
         return np.clip(action, -1.0, 1.0)
 

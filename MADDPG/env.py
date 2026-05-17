@@ -5,8 +5,8 @@ class PursuitEnv:
 
         self.dt = 1.0
         self.max_steps = 200
-        self.capture_radius = 0.2
-        self.world_limit = 50.0
+        self.capture_radius = 1.5
+        self.world_limit = 10.0
 
         self.max_speed = 1.0
 
@@ -23,7 +23,8 @@ class PursuitEnv:
         self.evader_vel = np.zeros(3)
 
         self.step_count = 0
-
+        difficulty = min(1.0, self.total_episodes / 3000)
+        
         return self.get_states()
 
     def step(self, a1, a2, a_e=None):
@@ -35,19 +36,33 @@ class PursuitEnv:
         self.p1_vel = a1
         self.p2_vel = a2
 
-        # --- Reactive evader ---
-        # Find nearest pursuer
-        # --- Smarter Evader: maximize distance to both pursuers ---
+        # --------------------------------
+        # Curriculum Evader
+        # --------------------------------
+
+        difficulty = min(1.0, self.step_count / 5000)
+
+        random_dir = np.random.randn(3)
+        random_dir /= (np.linalg.norm(random_dir) + 1e-6)
 
         vec1 = self.evader_pos - self.p1_pos
         vec2 = self.evader_pos - self.p2_pos
 
-        # Combine escape directions
-        direction = vec1 / (np.linalg.norm(vec1) + 1e-6) + \
-                    vec2 / (np.linalg.norm(vec2) + 1e-6)
+        smart_dir = (
+            vec1 / (np.linalg.norm(vec1) + 1e-6)
+            +
+            vec2 / (np.linalg.norm(vec2) + 1e-6)
+        )
 
-        # norm = np.linalg.norm(direction) + 1e-6
-        # direction = direction / (np.linalg.norm(direction) + 1e-6)
+        smart_dir /= (np.linalg.norm(smart_dir) + 1e-6)
+
+        direction = (
+            (1 - difficulty) * random_dir
+            +
+            difficulty * smart_dir
+        )
+
+        direction /= (np.linalg.norm(direction) + 1e-6)
 
         # Add noise
         noise = 0.1 * np.random.randn(3)
@@ -66,9 +81,9 @@ class PursuitEnv:
         self.evader_pos += self.evader_vel * self.dt
 
         # # --- Bound world ---
-        # self.p1_pos = np.clip(self.p1_pos, -self.world_limit, self.world_limit)
-        # self.p2_pos = np.clip(self.p2_pos, -self.world_limit, self.world_limit)
-        # self.evader_pos = np.clip(self.evader_pos, -self.world_limit, self.world_limit)
+        self.p1_pos = np.clip(self.p1_pos, -self.world_limit, self.world_limit)
+        self.p2_pos = np.clip(self.p2_pos, -self.world_limit, self.world_limit)
+        self.evader_pos = np.clip(self.evader_pos, -self.world_limit, self.world_limit)
 
         self.step_count += 1
 
@@ -132,7 +147,7 @@ class PursuitEnv:
         # Capture reward
         # -----------------------------
         if d1 < self.capture_radius or d2 < self.capture_radius:
-            r += 300
+            r += 20
             done = True
 
         # -----------------------------
