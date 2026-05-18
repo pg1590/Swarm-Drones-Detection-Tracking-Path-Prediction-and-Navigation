@@ -5,12 +5,13 @@ from utils import build_joint_state
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 import numpy as np
+import os
 
 MAX_EPISODES = 5000
 BATCH_SIZE = 256
 
 def main():
-
+    os.makedirs("plots", exist_ok=True)
     env = PursuitEnv()
     state_dim = 18
     action_dim = 3
@@ -176,7 +177,8 @@ def main():
 
             ax.legend()
 
-            plt.show()
+            plt.savefig(f"plots/trajectory_ep_{episode}.png")
+            plt.close()
             # =====================================
             # SEPARATION + ANGLE PLOTS
             # =====================================
@@ -199,7 +201,8 @@ def main():
             axarr[1].set_xlabel("Timestep")
 
             plt.tight_layout()
-            plt.show()
+            plt.savefig(f"plots/metrics_ep_{episode}.png")
+            plt.close()
 
     print("Training complete.")
 
