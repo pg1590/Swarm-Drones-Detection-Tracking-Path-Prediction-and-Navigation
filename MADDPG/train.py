@@ -95,7 +95,7 @@ def main():
             d1 = np.linalg.norm(env.p1_pos - env.evader_pos)
             d2 = np.linalg.norm(env.p2_pos - env.evader_pos)
             capture_metric = (
-                np.linalg.norm(np.cross(v1_norm, v2_norm))
+                np.linalg.norm(np.cross(v1, v2))
                 /
                 ((d1 + d2)/2 + 1e-6)
             )
@@ -110,7 +110,7 @@ def main():
         d1 = np.linalg.norm(env.p1_pos - env.evader_pos)
         d2 = np.linalg.norm(env.p2_pos - env.evader_pos)
 
-        if d1 < env.capture_radius or d2 < env.capture_radius:
+        if d1 < env.capture_radius and d2 < env.capture_radius:
             success_count += 1
 
         if episode % 500 == 0:
