@@ -28,6 +28,7 @@ def main():
         states = env.reset()
         p1_traj = []
         p2_traj = []
+        capture_metric_history = []
         evader_traj = []
 
         separation_history = []
@@ -73,6 +74,7 @@ def main():
             states = next_states
             episode_reward += r
 
+
             if len(buffer) > 5000:
                 agent.update(buffer, BATCH_SIZE)
 
@@ -90,7 +92,15 @@ def main():
 
             v1 /= (np.linalg.norm(v1) + 1e-6)
             v2 /= (np.linalg.norm(v2) + 1e-6)
+            d1 = np.linalg.norm(env.p1_pos - env.evader_pos)
+            d2 = np.linalg.norm(env.p2_pos - env.evader_pos)
+            capture_metric = (
+                np.linalg.norm(np.cross(v1_norm, v2_norm))
+                /
+                ((d1 + d2)/2 + 1e-6)
+            )
 
+            capture_metric_history.append(capture_metric)
             dot = np.clip(np.dot(v1, v2), -1.0, 1.0)
 
             angle = np.degrees(np.arccos(dot))
@@ -182,9 +192,14 @@ def main():
             # =====================================
             # SEPARATION + ANGLE PLOTS
             # =====================================
-
-            fig2, axarr = plt.subplots(2, 1, figsize=(8, 6))
-
+            fig2, axarr = plt.subplots(3, 1, figsize=(8, 10))
+            # --------------------------------
+            # Trap metric
+            # --------------------------------
+            axarr[2].plot(capture_metric_history)
+            axarr[2].set_title("Trap Metric")
+            axarr[2].set_ylabel("Trap Quality")
+            axarr[2].set_xlabel("Timestep")
             # --------------------------------
             # Separation
             # --------------------------------

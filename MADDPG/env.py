@@ -4,7 +4,7 @@ class PursuitEnv:
     def __init__(self):
 
         self.dt = 1.0
-        self.max_steps = 200
+        self.max_steps = 100
         self.capture_radius = 1.5
         self.world_limit = 10.0
         self.total_episodes = 0
@@ -24,6 +24,15 @@ class PursuitEnv:
 
         self.step_count = 0
         difficulty = min(1.0, self.total_episodes / 3000)
+        # --------------------------------
+        # Curriculum scaling
+        # --------------------------------
+
+        self.world_limit = 10 + 40 * difficulty
+
+        self.capture_radius = 1.5 - 1.2 * difficulty
+
+        self.evader_speed = 0.5 + difficulty
 
         return self.get_states()
 
@@ -40,7 +49,7 @@ class PursuitEnv:
         # Curriculum Evader
         # --------------------------------
 
-        difficulty = min(1.0, self.step_count / 5000)
+        difficulty = min(1.0, self.total_episodes / 3000)
 
         random_dir = np.random.randn(3)
         random_dir /= (np.linalg.norm(random_dir) + 1e-6)
@@ -72,8 +81,7 @@ class PursuitEnv:
 
 
         # Evader slightly slower than pursuers
-        evader_speed = 1
-        self.evader_vel = evader_speed * direction
+        self.evader_vel = self.evader_speed * direction
 
         # --- Update positions ---
         self.p1_pos += self.p1_vel * self.dt
@@ -107,7 +115,13 @@ class PursuitEnv:
         # -----------------------------
         pursuer_sep = np.linalg.norm(self.p1_pos - self.p2_pos)
 
-        r_sep = 0.1 * np.clip(pursuer_sep, 0, 10)
+        # --------------------------------
+        # Controlled separation
+        # Reward moderate spacing only
+        # --------------------------------
+        ideal_sep = 6.0
+
+        r_sep = -0.02 * abs(pursuer_sep - ideal_sep)
 
         # -----------------------------
         # 3. Angular enclosure reward
@@ -124,6 +138,19 @@ class PursuitEnv:
 
         # dot = -1 means 180 degrees
         r_angle = -0.5 * dot
+        # --------------------------------
+        # Escape corridor minimization
+        # Encourage enclosing geometry
+        # --------------------------------
+
+        cross_mag = np.linalg.norm(np.cross(v1_norm, v2_norm))
+
+        # large cross = wide spread
+        # but we also want both close
+
+        mean_dist = (d1 + d2) / 2.0
+
+        r_trap = 2.0 * cross_mag / (mean_dist + 1e-6)
 
         # -----------------------------
         # 4. Interception reward
@@ -139,15 +166,26 @@ class PursuitEnv:
         # -----------------------------
         # Total reward
         # -----------------------------
-        r = r_dist + r_sep + r_angle + r_intercept
+        r = (
+            r_dist
+            + r_sep
+            + r_angle
+            + r_intercept
+            + r_trap
+        )
 
         done = False
 
-        # -----------------------------
-        # Capture reward
-        # -----------------------------
-        if d1 < self.capture_radius or d2 < self.capture_radius:
-            r += 20
+        # --------------------------------
+        # Cooperative capture
+        # BOTH pursuers must engage
+        # --------------------------------
+        if (
+            d1 < self.capture_radius
+            and
+            d2 < self.capture_radius
+        ):
+            r += 40
             done = True
 
         # -----------------------------
