@@ -23,14 +23,14 @@ class PursuitEnv:
         self.evader_vel = np.zeros(3)
 
         self.step_count = 0
-        difficulty = min(1.0, self.total_episodes / 3000)
+        difficulty = min(1.0, self.total_episodes / 10000)
         # --------------------------------
         # Curriculum scaling
         # --------------------------------
 
-        self.world_limit = 10 + 40 * difficulty
+        self.world_limit = 10 + 20 * difficulty
 
-        self.capture_radius = 1.5 - 1.2 * difficulty
+        self.capture_radius = 1.5 - 0.7 * difficulty
 
         self.evader_speed = 0.5 + difficulty
 
@@ -107,7 +107,7 @@ class PursuitEnv:
         # -----------------------------
         # 1. Distance shaping
         # -----------------------------
-        r_dist = -0.05 * (d1 + d2)
+        r_dist = -0.1 * (d1 + d2)
 
         # -----------------------------
         # 2. Anti-clustering reward
@@ -137,7 +137,7 @@ class PursuitEnv:
         dot = np.dot(v1_norm, v2_norm)
 
         # dot = -1 means 180 degrees
-        r_angle = -0.5 * dot
+        r_angle = -0.1 * dot
         # --------------------------------
         # Escape corridor minimization
         # Encourage enclosing geometry
@@ -150,7 +150,7 @@ class PursuitEnv:
 
         mean_dist = (d1 + d2) / 2.0
 
-        r_trap = 2.0 * cross_mag / (mean_dist + 1e-6)
+        r_trap = 0.2 * cross_mag / (mean_dist + 1e-6)
 
         # -----------------------------
         # 4. Interception reward
@@ -177,15 +177,23 @@ class PursuitEnv:
         done = False
 
         # --------------------------------
-        # Cooperative capture
-        # BOTH pursuers must engage
+        # Soft cooperative capture
         # --------------------------------
-        if (
-            d1 < self.capture_radius
-            and
-            d2 < self.capture_radius
-        ):
-            r += 40
+
+        if d1 < self.capture_radius or d2 < self.capture_radius:
+
+            cooperative_bonus = 0
+
+            # reward teammate proximity
+            if (
+                d1 < 2.5 * self.capture_radius
+                and
+                d2 < 2.5 * self.capture_radius
+            ):
+                cooperative_bonus = 20
+
+            r += 20 + cooperative_bonus
+
             done = True
 
         # -----------------------------
