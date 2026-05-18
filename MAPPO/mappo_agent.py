@@ -19,7 +19,8 @@ class MAPPO:
         gae_lambda=0.95,
         clip_eps=0.2,
         entropy_coef=0.01,
-        critic_coef=0.5
+        critic_coef=0.5,
+        logger=None
     ):
 
         # ------------------------------------------------
@@ -55,6 +56,8 @@ class MAPPO:
         self.entropy_coef = entropy_coef
 
         self.critic_coef = critic_coef
+        self.logger = logger 
+        
 
     def select_action(self, obs):
 
@@ -197,10 +200,11 @@ class MAPPO:
                 approx_kl = (
                     old_logprobs - new_logprobs
                 ).mean()
-                print(
-                    f"Ratio Mean: {ratios.mean().item():.4f} | "
-                    f"KL: {approx_kl.item():.6f}"
-                )
+                if self.logger:
+                    self.logger.info(
+                        f"Ratio Mean: {ratios.mean().item():.4f} | "
+                        f"KL: {approx_kl.item():.6f}"
+                    )
                 surr1 = ratios * advantages
 
                 surr2 = torch.clamp(
@@ -264,8 +268,9 @@ class MAPPO:
                 self.actor_optimizer.step()
 
                 self.critic_optimizer.step()
-                print(
-                    f"Actor Loss: {actor_loss.item():.4f} | "
-                    f"Critic Loss: {critic_loss.item():.4f} | "
-                    f"Entropy: {entropy.mean().item():.4f}"
-                )
+                if self.logger:
+                    self.logger.info(
+                        f"Actor Loss: {actor_loss.item():.4f} | "
+                        f"Critic Loss: {critic_loss.item():.4f} | "
+                        f"Entropy: {entropy.mean().item():.4f}"
+                    )

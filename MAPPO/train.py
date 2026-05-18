@@ -6,7 +6,29 @@ from rollout_buffer import RolloutBuffer
 
 import torch
 import numpy as np
+import logging
+import os
+from datetime import datetime
 
+# -----------------------------------
+# Logging Setup
+# -----------------------------------
+
+os.makedirs("logs", exist_ok=True)
+
+timestamp = datetime.now().strftime(
+    "%Y%m%d_%H%M%S"
+)
+
+log_filename = f"logs/mappo_{timestamp}.log"
+
+logging.basicConfig(
+    filename=log_filename,
+    level=logging.INFO,
+    format="%(asctime)s | %(message)s"
+)
+
+logger = logging.getLogger()
 
 # ------------------------------------------------
 # Training Hyperparameters
@@ -44,7 +66,7 @@ def main():
     agent = MAPPO(
         obs_dim=obs_dim,
         global_state_dim=global_state_dim,
-        action_dim=action_dim
+        action_dim=action_dim,logger=logger
     )
 
     # ------------------------------------------------
@@ -224,25 +246,26 @@ def main():
 
         if episode % 20 == 0:
 
-            print("=" * 50)
+            logger.info("=" * 50)
 
-            print(f"Episode: {episode}")
+            logger.info(
+                f"Episode: {episode}"
+            )
 
-            print(
+            logger.info(
                 f"Reward: {episode_reward:.2f}"
             )
 
-            print(
+            logger.info(
                 f"Success Rate: "
                 f"{success_count/(episode+1):.3f}"
             )
 
-            print(
+            logger.info(
                 f"Total Steps: {total_steps}"
             )
 
-            print("=" * 50)
-
+    logger.info("=" * 50)
     print("Training Complete")
 
 
