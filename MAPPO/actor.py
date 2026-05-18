@@ -44,25 +44,35 @@ class Actor(nn.Module):
 
     def get_action(self, obs):
         """
-        Sample action for training
+        Sample bounded action for training
         """
 
         dist = self.forward(obs)
 
-        action = dist.rsample()
+        raw_action = dist.rsample()
 
-        log_prob = dist.log_prob(action).sum(dim=-1)
+        action = torch.tanh(raw_action)
+
+        log_prob = dist.log_prob(raw_action).sum(dim=-1)
 
         return action, log_prob
 
     def evaluate(self, obs, action):
         """
-        Used during PPO update
+        PPO evaluation
         """
 
         dist = self.forward(obs)
 
-        log_prob = dist.log_prob(action).sum(dim=-1)
+        clipped_action = torch.clamp(
+            action,
+            -0.999,
+            0.999
+        )
+
+        raw_action = torch.atanh(clipped_action)
+
+        log_prob = dist.log_prob(raw_action).sum(dim=-1)
 
         entropy = dist.entropy().sum(dim=-1)
 

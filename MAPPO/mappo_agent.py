@@ -14,11 +14,11 @@ class MAPPO:
         global_state_dim,
         action_dim,
         lr_actor=3e-4,
-        lr_critic=1e-3,
+        lr_critic=3e-4,
         gamma=0.99,
         gae_lambda=0.95,
         clip_eps=0.2,
-        entropy_coef=0.05,
+        entropy_coef=0.01,
         critic_coef=0.5
     ):
 
@@ -81,7 +81,7 @@ class MAPPO:
 
         gae = 0
 
-        values = values + [next_value]
+        values = list(values) + [next_value]
 
         for step in reversed(range(len(rewards))):
 
@@ -194,7 +194,13 @@ class MAPPO:
                 ratios = torch.exp(
                     new_logprobs - old_logprobs
                 )
-
+                approx_kl = (
+                    old_logprobs - new_logprobs
+                ).mean()
+                print(
+                    f"Ratio Mean: {ratios.mean().item():.4f} | "
+                    f"KL: {approx_kl.item():.6f}"
+                )
                 surr1 = ratios * advantages
 
                 surr2 = torch.clamp(
@@ -241,6 +247,25 @@ class MAPPO:
 
                 total_loss.backward()
 
+                # -----------------------------------
+                # Gradient Clipping
+                # -----------------------------------
+
+                torch.nn.utils.clip_grad_norm_(
+                    self.actor.parameters(),
+                    0.5
+                )
+
+                torch.nn.utils.clip_grad_norm_(
+                    self.critic.parameters(),
+                    0.5
+                )
+
                 self.actor_optimizer.step()
 
                 self.critic_optimizer.step()
+                print(
+                    f"Actor Loss: {actor_loss.item():.4f} | "
+                    f"Critic Loss: {critic_loss.item():.4f} | "
+                    f"Entropy: {entropy.mean().item():.4f}"
+                )

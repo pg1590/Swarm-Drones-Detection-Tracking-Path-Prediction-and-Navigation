@@ -392,7 +392,7 @@ class PursuitEnv:
             d2 < self.capture_radius
         ):
 
-            reward += 1500.0
+            reward += 200.0
 
             self.capture = True
 
