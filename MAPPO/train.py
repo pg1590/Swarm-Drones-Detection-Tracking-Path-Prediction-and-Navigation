@@ -3,7 +3,7 @@ from env import PursuitEnv
 from mappo_agent import MAPPO
 
 from rollout_buffer import RolloutBuffer
-
+from utils import compute_swarm_metrics
 import torch
 import numpy as np
 import logging
@@ -76,11 +76,18 @@ def main():
     buffer = RolloutBuffer()
 
     success_count = 0
+    min_evader_dist = 1e9
 
     total_steps = 0
 
     for episode in range(MAX_EPISODES):
-
+        episode_metrics = {
+            "separation": [],
+            "enclosure_angle": [],
+            "mean_evader_dist": [],
+            "team_center_dist": []
+        }
+        persistent_trap_steps = 0
         observations = env.reset()
 
         done = False
@@ -135,7 +142,21 @@ def main():
                 action1,
                 action2
             )
-
+            metrics = compute_swarm_metrics(
+                env.pursuer1_pos,
+                env.pursuer2_pos,
+                env.evader_pos
+            )
+            if metrics["enclosure_angle"] > 120:
+                persistent_trap_steps += 1
+            for key in episode_metrics:
+                episode_metrics[key].append(
+                    metrics[key]
+                )
+            min_evader_dist = min(
+                min_evader_dist,
+                metrics["mean_evader_dist"]
+            )
             # ----------------------------------------
             # Store BOTH agents separately
             # ----------------------------------------
@@ -169,7 +190,6 @@ def main():
             # ----------------------------------------
             # PPO Update
             # ----------------------------------------
-
             if total_steps % ROLLOUT_STEPS == 0:
 
                 data = buffer.get()
@@ -244,7 +264,7 @@ def main():
         # Logging
         # ----------------------------------------
 
-        if episode % 20 == 0:
+        if episode % 50 == 0:
 
             print("=" * 50)
 
@@ -264,7 +284,33 @@ def main():
             )
 
             print("=" * 50)
-       
+            logger.info(
+                f"Mean Separation: "
+                f"{np.mean(episode_metrics['separation']):.3f}"
+            )
+
+            logger.info(
+                f"Mean Enclosure Angle: "
+                f"{np.mean(episode_metrics['enclosure_angle']):.3f}"
+            )
+
+            logger.info(
+                f"Mean Evader Distance: "
+                f"{np.mean(episode_metrics['mean_evader_dist']):.3f}"
+            )
+
+            logger.info(
+                f"Mean Team Center Dist: "
+                f"{np.mean(episode_metrics['team_center_dist']):.3f}"
+            )
+            logger.info(
+                f"Trap Persistence Steps: "
+                f"{persistent_trap_steps/ max(1, env.steps):.3f}"
+            )
+            logger.info(
+                f"Min Evader Dist: "
+                f"{min_evader_dist:.3f}"
+            )
 
     print("Training Complete")
 

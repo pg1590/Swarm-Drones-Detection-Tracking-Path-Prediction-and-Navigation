@@ -410,6 +410,7 @@ class PursuitEnv:
 
             done = True
 
+        reward=reward/50.0
         return reward, done
     
     def _get_agent_obs(self, agent_id):

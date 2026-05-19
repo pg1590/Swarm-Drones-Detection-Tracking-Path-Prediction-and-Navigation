@@ -91,3 +91,115 @@ def enclosure_reward(p1, p2, target):
     angle /= np.pi
 
     return angle
+
+import numpy as np
+
+
+def compute_swarm_metrics(
+    p1_pos,
+    p2_pos,
+    evader_pos,
+    predicted_evader_pos=None,
+    capture=False
+):
+
+    metrics = {}
+
+    # -----------------------------------
+    # Pursuer Separation
+    # -----------------------------------
+
+    separation = np.linalg.norm(
+        p1_pos - p2_pos
+    )
+
+    metrics["separation"] = separation
+
+    # -----------------------------------
+    # Distances to Evader
+    # -----------------------------------
+
+    d1 = np.linalg.norm(
+        p1_pos - evader_pos
+    )
+
+    d2 = np.linalg.norm(
+        p2_pos - evader_pos
+    )
+
+    metrics["p1_evader_dist"] = d1
+    metrics["p2_evader_dist"] = d2
+
+    metrics["mean_evader_dist"] = (
+        d1 + d2
+    ) / 2.0
+
+    # -----------------------------------
+    # Enclosure Angle
+    # -----------------------------------
+
+    v1 = p1_pos - evader_pos
+    v2 = p2_pos - evader_pos
+
+    norm1 = np.linalg.norm(v1)
+    norm2 = np.linalg.norm(v2)
+
+    if norm1 > 1e-6 and norm2 > 1e-6:
+
+        cosine = np.dot(v1, v2) / (
+            norm1 * norm2
+        )
+
+        cosine = np.clip(
+            cosine,
+            -1.0,
+            1.0
+        )
+
+        angle = np.degrees(
+            np.arccos(cosine)
+        )
+
+    else:
+        angle = 0.0
+
+    metrics["enclosure_angle"] = angle
+
+    # -----------------------------------
+    # Team Center
+    # -----------------------------------
+
+    team_center = (
+        p1_pos + p2_pos
+    ) / 2.0
+
+    team_center_dist = np.linalg.norm(
+        team_center - evader_pos
+    )
+
+    metrics["team_center_dist"] = (
+        team_center_dist
+    )
+
+    # -----------------------------------
+    # Interception Error
+    # -----------------------------------
+
+    if predicted_evader_pos is not None:
+
+        pred_error = np.linalg.norm(
+            team_center -
+            predicted_evader_pos
+        )
+
+        metrics[
+            "interception_error"
+        ] = pred_error
+
+    # -----------------------------------
+    # Capture
+    # -----------------------------------
+
+    metrics["capture"] = int(capture)
+
+    return metrics
