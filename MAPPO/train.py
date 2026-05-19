@@ -87,6 +87,9 @@ def main():
             "team_center_dist": []
         }
         persistent_trap_steps = 0
+        current_trap = 0
+
+        max_consecutive_trap = 0
         min_evader_dist = 1e9
         observations = env.reset()
 
