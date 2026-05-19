@@ -305,7 +305,7 @@ def main():
             )
             logger.info(
                 f"Trap Persistence Steps: "
-                f"{persistent_trap_steps/ max(1, env.step):.3f}"
+                f"{persistent_trap_steps/ max(1, env.step_count):.3f}"
             )
             logger.info(
                 f"Min Evader Dist: "
