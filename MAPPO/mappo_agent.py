@@ -18,7 +18,7 @@ class MAPPO:
         gamma=0.99,
         gae_lambda=0.95,
         clip_eps=0.2,
-        entropy_coef=0.005,
+        entropy_coef=0.001,
         critic_coef=0.1,
         logger=None
     ):

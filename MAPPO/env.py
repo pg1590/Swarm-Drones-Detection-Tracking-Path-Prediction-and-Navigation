@@ -1,6 +1,6 @@
 import numpy as np
 from collections import deque
-
+from utils import compute_swarm_metrics
 
 class PursuitEnv:
 
@@ -57,7 +57,7 @@ class PursuitEnv:
         self.step_count = 0
 
         self.capture = False
-
+        self.enclosure_steps=0
         # ------------------------------------------------
         # Observation histories
         # ------------------------------------------------
@@ -292,6 +292,14 @@ class PursuitEnv:
 
             self.evader_pos
         )
+        metric=compute_swarm_metrics(
+            self.p1_pos,
+
+            self.p2_pos,
+
+            self.evader_pos
+
+        )
 
         # ------------------------------------------------
         # Reward initialization
@@ -322,7 +330,18 @@ class PursuitEnv:
         if d1 < 8.0 and d2 < 8.0:
 
             reward += 8.0 * angle_reward
+        
+        if metric["enclosure_angle"] > 120:
 
+            self.enclosure_steps += 1
+
+            reward += 0.2
+
+            reward += 0.01 * self.enclosure_steps
+
+        else:
+
+            self.enclosure_steps = 0
         # =================================================
         # 4. Prevent overlap collapse
         # =================================================
@@ -387,7 +406,7 @@ class PursuitEnv:
 
             d1 < self.capture_radius
 
-            or
+            and
 
             d2 < self.capture_radius
         ):

@@ -15,7 +15,7 @@ from datetime import datetime
 # -----------------------------------
 
 os.makedirs("logs", exist_ok=True)
-
+os.makedirs("checkpoints", exist_ok=True)
 timestamp = datetime.now().strftime(
     "%Y%m%d_%H%M%S"
 )
@@ -34,7 +34,7 @@ logger = logging.getLogger()
 # Training Hyperparameters
 # ------------------------------------------------
 
-MAX_EPISODES = 5000
+MAX_EPISODES = 10000
 
 ROLLOUT_STEPS = 4096
 
@@ -76,7 +76,6 @@ def main():
     buffer = RolloutBuffer()
 
     success_count = 0
-    min_evader_dist = 1e9
 
     total_steps = 0
 
@@ -88,6 +87,7 @@ def main():
             "team_center_dist": []
         }
         persistent_trap_steps = 0
+        min_evader_dist = 1e9
         observations = env.reset()
 
         done = False
@@ -149,6 +149,14 @@ def main():
             )
             if metrics["enclosure_angle"] > 120:
                 persistent_trap_steps += 1
+                current_trap += 1
+                max_consecutive_trap = max(
+                    max_consecutive_trap,
+                    current_trap
+                )
+            else:
+                current_trap = 0
+
             for key in episode_metrics:
                 episode_metrics[key].append(
                     metrics[key]
@@ -263,7 +271,17 @@ def main():
         # ----------------------------------------
         # Logging
         # ----------------------------------------
+        if episode % 500 == 0:
 
+            torch.save(
+                agent.actor.state_dict(),
+                f"checkpoints/actor_{episode}.pth"
+            )
+
+            torch.save(
+                agent.critic.state_dict(),
+                f"checkpoints/critic_{episode}.pth"
+            )
         if episode % 50 == 0:
 
             print("=" * 50)
@@ -311,7 +329,35 @@ def main():
                 f"Min Evader Dist: "
                 f"{min_evader_dist:.3f}"
             )
+            logger.info("=" * 50)
 
+            logger.info(
+                f"Episode: {episode}"
+            )
+
+            logger.info(
+                f"Reward: {episode_reward:.2f}"
+            )
+
+            logger.info(
+                f"Success Rate: "
+                f"{success_count/(episode+1):.3f}"
+            )
+
+            logger.info(
+                f"Total Steps: {total_steps}"
+            )
+            logger.info(
+                f"Capture: {int(env.capture)}"
+            )
+            logger.info(
+                f"Max Consecutive Trap: "
+                f"{max_consecutive_trap}"
+            )
+            logger.info(
+                f"Episode Length: "
+                f"{env.step_count}"
+            )
     print("Training Complete")
 
 
