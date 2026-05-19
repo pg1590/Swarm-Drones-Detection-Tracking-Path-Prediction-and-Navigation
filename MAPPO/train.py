@@ -246,26 +246,26 @@ def main():
 
         if episode % 20 == 0:
 
-            logger.info("=" * 50)
+            print("=" * 50)
 
-            logger.info(
-                f"Episode: {episode}"
-            )
+            print(f"Episode: {episode}")
 
-            logger.info(
+            print(
                 f"Reward: {episode_reward:.2f}"
             )
 
-            logger.info(
+            print(
                 f"Success Rate: "
                 f"{success_count/(episode+1):.3f}"
             )
 
-            logger.info(
+            print(
                 f"Total Steps: {total_steps}"
             )
 
-    logger.info("=" * 50)
+            print("=" * 50)
+       
+
     print("Training Complete")
 
 
