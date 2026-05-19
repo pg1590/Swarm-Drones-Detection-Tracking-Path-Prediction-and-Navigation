@@ -143,8 +143,8 @@ def main():
                 action2
             )
             metrics = compute_swarm_metrics(
-                env.pursuer1_pos,
-                env.pursuer2_pos,
+                env.p1_pos,
+                env.p2_pos,
                 env.evader_pos
             )
             if metrics["enclosure_angle"] > 120:
