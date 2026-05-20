@@ -280,6 +280,16 @@ class PursuitEnv:
             self.p1_pos - self.p2_pos
         )
 
+        optimal_sep = 8.0
+
+        sep_reward = -abs(
+            inter_agent_dist - optimal_sep
+        )
+
+        if d1 < 12 and d2 < 12:
+
+            reward += 0.05 * sep_reward
+
         # ------------------------------------------------
         # Geometric enclosure reward
         # ------------------------------------------------
