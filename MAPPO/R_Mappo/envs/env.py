@@ -1,8 +1,8 @@
-import gym
+import gymnasium as gym
+from gymnasium import spaces
 import numpy as np
 import pybullet as p
 import pybullet_data
-from gym import spaces
 
 
 class DroneSwarmEnv(gym.Env):
@@ -90,7 +90,7 @@ class DroneSwarmEnv(gym.Env):
 
         p.setGravity(0, 0, -9.8)
 
-        p.loadPlaneURDF("plane.urdf")
+        p.loadURDF("plane.urdf")
 
         self.current_step = 0
 
