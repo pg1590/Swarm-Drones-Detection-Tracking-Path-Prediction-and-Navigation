@@ -144,6 +144,7 @@ def main():
                 next_actor_hidden, \
                 next_critic_hidden = agent.select_action(
                     obs[drone_idx],
+                    state,
                     actor_hidden,
                     critic_hidden
                 )

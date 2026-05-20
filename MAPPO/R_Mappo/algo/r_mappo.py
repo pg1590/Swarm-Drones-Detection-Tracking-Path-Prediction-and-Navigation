@@ -71,6 +71,7 @@ class R_MAPPO:
     def select_action(
         self,
         obs,
+        state,
         actor_hidden,
         critic_hidden
     ):
@@ -108,11 +109,15 @@ class R_MAPPO:
         # CRITIC
         # =====================================================
 
+        state_tensor = torch.FloatTensor(state)\
+            .unsqueeze(0)\
+            .unsqueeze(0)\
+            .to(device)
+
         value, next_critic_hidden = self.critic(
-            obs_tensor,
+            state_tensor,
             critic_hidden
         )
-
         return (
             action.squeeze(0).squeeze(0).detach().cpu().numpy(),
             log_prob.item(),
