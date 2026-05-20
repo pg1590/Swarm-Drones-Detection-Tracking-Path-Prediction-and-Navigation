@@ -286,9 +286,6 @@ class PursuitEnv:
             inter_agent_dist - optimal_sep
         )
 
-        if d1 < 12 and d2 < 12:
-
-            reward += 0.05 * sep_reward
 
         # ------------------------------------------------
         # Geometric enclosure reward
@@ -316,6 +313,9 @@ class PursuitEnv:
         # ------------------------------------------------
 
         reward = 0.0
+        if d1 < 12 and d2 < 12:
+
+            reward += 0.05 * sep_reward
 
         # =================================================
         # 1. Future interception reward
