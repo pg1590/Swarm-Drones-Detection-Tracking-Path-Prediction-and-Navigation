@@ -66,4 +66,4 @@ SEED = 42
 
 MODEL_PATH = "models/recurrent_mappo_latest.pth"
 
-BEST_MODEL_PATH = "models/recurrent_mappo_best_run3.pth"
+BEST_MODEL_PATH = "models/recurrent_mappo_best_run4.pth"
