@@ -4,5 +4,10 @@ __pycache__/
 *.pt
 *.log
 runs/
-plots/
-models/
+
+# Ignore generated plot outputs only
+plots/**/*.png
+plots/**/*.jpg
+plots/**/*.jpeg
+plots/**/*.pdf
+plots/**/*.svg
