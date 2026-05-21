@@ -61,11 +61,12 @@ class DroneSwarmEnv(gym.Env):
         # neighbors relative pos (2*num_neighbors)
 
         obs_dim = (
-            2
-            + 2
-            + 2
+            2      # own pos
+            + 2    # own vel
+            + 2    # relative target pos
+            + 2    # target velocity
             + (self.num_drones - 1) * 2
-        )
+        )       
 
         self.observation_space = spaces.Box(
             low=-np.inf,
@@ -103,6 +104,11 @@ class DroneSwarmEnv(gym.Env):
             np.random.uniform(-4, 4)
         ])
 
+        self.target_velocity = np.array([
+            np.random.uniform(-0.05, 0.05),
+            np.random.uniform(-0.05, 0.05)
+        ])
+
         # =====================================================
         # DRONES
         # =====================================================
@@ -134,9 +140,10 @@ class DroneSwarmEnv(gym.Env):
         # =====================================================
 
         self.trajectory_history = []
+        self.target_history = []
 
         return self._get_obs()
-
+    
     # =========================================================
     # STEP
     # =========================================================
@@ -179,6 +186,21 @@ class DroneSwarmEnv(gym.Env):
             )
 
         p.stepSimulation()
+
+        # =====================================================
+        # MOVE TARGET
+        # =====================================================
+
+        self.target_pos += self.target_velocity
+
+        # boundary reflection
+        for k in range(2):
+
+            if self.target_pos[k] > 8:
+                self.target_velocity[k] *= -1
+
+            if self.target_pos[k] < -8:
+                self.target_velocity[k] *= -1
 
         # =====================================================
         # OBS + REWARD
@@ -224,15 +246,118 @@ class DroneSwarmEnv(gym.Env):
 
                 if dist < 0.3:
 
-                    reward -= 5.0
+                    reward -= 15.0
+
+            # =================================================
+            # COHESION REWARD
+            # =================================================
+
+            neighbor_distances = []
+
+            for j, other_drone in enumerate(self.drones):
+
+                if i == j:
+                    continue
+
+                other_pos, _ = p.getBasePositionAndOrientation(
+                    other_drone
+                )
+
+                other_pos = np.array(other_pos[:2])
+
+                dist = np.linalg.norm(pos - other_pos)
+
+                neighbor_distances.append(dist)
+
+            avg_neighbor_dist = np.mean(neighbor_distances)
+
+            # desired swarm spacing
+            if 1.0 < avg_neighbor_dist < 4.0:
+
+                reward += 1.0
+
+            # =================================================
+            # ENCIRCLEMENT REWARD
+            # =================================================
+
+            angles = []
+
+            for j, other_drone in enumerate(self.drones):
+
+                if i == j:
+                    continue
+
+                other_pos, _ = p.getBasePositionAndOrientation(
+                    other_drone
+                )
+
+                other_pos = np.array(other_pos[:2])
+
+                vec = other_pos - self.target_pos
+
+                angle = np.arctan2(vec[1], vec[0])
+
+                angles.append(angle)
+
+            if len(angles) >= 2:
+
+                angles = np.sort(angles)
+
+                angular_spread = angles[-1] - angles[0]
+
+                reward += 0.5 * angular_spread
+            
+
+            # =================================================
+            # ESCAPE CORRIDOR SUPPRESSION
+            # =================================================
+
+            all_angles = []
+
+            for drone_id in self.drones:
+
+                dpos, _ = p.getBasePositionAndOrientation(
+                    drone_id
+                )
+
+                dpos = np.array(dpos[:2])
+
+                vec = dpos - self.target_pos
+
+                angle = np.arctan2(vec[1], vec[0])
+
+                all_angles.append(angle)
+
+            all_angles = np.sort(all_angles)
+
+            largest_gap = 0
+
+            for k in range(len(all_angles) - 1):
+
+                gap = all_angles[k + 1] - all_angles[k]
+
+                largest_gap = max(largest_gap, gap)
+
+            # circular wraparound gap
+            wrap_gap = (
+                2 * np.pi
+                - all_angles[-1]
+                + all_angles[0]
+            )
+
+            largest_gap = max(largest_gap, wrap_gap)
+
+            # smaller gap = better enclosure
+            reward += (2 * np.pi - largest_gap)
+
 
             # =================================================
             # TARGET BONUS
             # =================================================
 
-            if target_distance < 0.5:
+            if target_distance < 1.0:
 
-                reward += 20.0
+                reward += 30.0
 
             done = False
 
@@ -251,7 +376,9 @@ class DroneSwarmEnv(gym.Env):
         self.trajectory_history.append(
             np.array(positions)
         )
-
+        self.target_history.append(
+            self.target_pos.copy()
+        )
         next_obs = self._get_obs()
 
         return (
@@ -296,6 +423,12 @@ class DroneSwarmEnv(gym.Env):
             rel_target = self.target_pos - pos
 
             obs.extend(rel_target)
+
+            # =================================================
+            # TARGET VELOCITY
+            # =================================================
+
+            obs.extend(self.target_velocity)
 
             # =================================================
             # NEIGHBOR RELATIVE POSITIONS

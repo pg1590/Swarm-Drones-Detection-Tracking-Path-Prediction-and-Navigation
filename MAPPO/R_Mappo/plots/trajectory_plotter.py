@@ -11,22 +11,16 @@ def plot_trajectories(
     trajectory_history,
     target_positions=None,
     save_path=None,
-    show_plot=False
+    show_plot=False,
+    show_escape_corridor=True
 ):
 
     """
     trajectory_history:
-        list of shape:
         [timesteps][num_agents][2]
 
     target_positions:
-        optional list of target positions
-
-    save_path:
-        optional path to save figure
-
-    show_plot:
-        whether to display figure
+        [timesteps][2]
     """
 
     trajectory_history = np.array(
@@ -40,7 +34,7 @@ def plot_trajectories(
     plt.figure(figsize=(10, 10))
 
     # ========================================================
-    # AGENT TRAJECTORIES
+    # DRONE TRAJECTORIES
     # ========================================================
 
     for agent_idx in range(num_agents):
@@ -63,7 +57,7 @@ def plot_trajectories(
             x[0],
             y[0],
             marker='o',
-            s=100
+            s=120
         )
 
         # end point
@@ -71,7 +65,7 @@ def plot_trajectories(
             x[-1],
             y[-1],
             marker='x',
-            s=100
+            s=120
         )
 
     # ========================================================
@@ -95,21 +89,125 @@ def plot_trajectories(
             label='Target'
         )
 
+        # target start
         plt.scatter(
             tx[0],
             ty[0],
             c='black',
             marker='s',
-            s=120
+            s=180,
+            label='Target Start'
         )
 
+        # target end
         plt.scatter(
             tx[-1],
             ty[-1],
             c='red',
             marker='*',
-            s=150
+            s=220,
+            label='Target End'
         )
+
+    # ========================================================
+    # ESCAPE CORRIDOR VISUALIZATION
+    # ========================================================
+
+    if (
+        show_escape_corridor
+        and target_positions is not None
+    ):
+
+        final_target = target_positions[-1]
+
+        final_positions = trajectory_history[-1]
+
+        angles = []
+
+        for pos in final_positions:
+
+            vec = pos - final_target
+
+            angle = np.arctan2(
+                vec[1],
+                vec[0]
+            )
+
+            angles.append(angle)
+
+        angles = np.sort(angles)
+
+        # largest angular gap
+        largest_gap = 0
+        best_pair = None
+
+        for i in range(len(angles) - 1):
+
+            gap = angles[i + 1] - angles[i]
+
+            if gap > largest_gap:
+
+                largest_gap = gap
+
+                best_pair = (
+                    angles[i],
+                    angles[i + 1]
+                )
+
+        wrap_gap = (
+            2 * np.pi
+            - angles[-1]
+            + angles[0]
+        )
+
+        if wrap_gap > largest_gap:
+
+            largest_gap = wrap_gap
+
+            best_pair = (
+                angles[-1],
+                angles[0] + 2 * np.pi
+            )
+
+        # visualize corridor
+        theta_mid = (
+            best_pair[0]
+            + best_pair[1]
+        ) / 2
+
+        corridor_length = 5
+
+        dx = corridor_length * np.cos(theta_mid)
+        dy = corridor_length * np.sin(theta_mid)
+
+        plt.arrow(
+            final_target[0],
+            final_target[1],
+            dx,
+            dy,
+            width=0.05,
+            head_width=0.3,
+            linestyle='--'
+        )
+
+    # ========================================================
+    # FINAL SWARM CONNECTIONS
+    # ========================================================
+
+    final_positions = trajectory_history[-1]
+
+    for i in range(num_agents):
+
+        for j in range(i + 1, num_agents):
+
+            p1 = final_positions[i]
+            p2 = final_positions[j]
+
+            plt.plot(
+                [p1[0], p2[0]],
+                [p1[1], p2[1]],
+                alpha=0.3
+            )
 
     # ========================================================
     # PLOT SETTINGS
@@ -117,7 +215,7 @@ def plot_trajectories(
 
     plt.title(
         "Drone Swarm Trajectories",
-        fontsize=18
+        fontsize=20
     )
 
     plt.xlabel("X Position")
@@ -146,7 +244,9 @@ def plot_trajectories(
             bbox_inches='tight'
         )
 
-        print(f"Trajectory plot saved to: {save_path}")
+        print(
+            f"Trajectory plot saved to: {save_path}"
+        )
 
     # ========================================================
     # SHOW
@@ -195,7 +295,9 @@ def plot_rewards(
             bbox_inches='tight'
         )
 
-        print(f"Reward plot saved to: {save_path}")
+        print(
+            f"Reward plot saved to: {save_path}"
+        )
 
     if show_plot:
 
@@ -205,7 +307,7 @@ def plot_rewards(
 
 
 # ============================================================
-# SMOOTH REWARD CURVE
+# SMOOTHED REWARD CURVE
 # ============================================================
 
 def plot_smoothed_rewards(
@@ -249,7 +351,9 @@ def plot_smoothed_rewards(
             bbox_inches='tight'
         )
 
-        print(f"Smoothed reward plot saved to: {save_path}")
+        print(
+            f"Smoothed reward plot saved to: {save_path}"
+        )
 
     if show_plot:
 

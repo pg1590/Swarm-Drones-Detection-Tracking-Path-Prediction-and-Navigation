@@ -84,7 +84,10 @@ def main():
     # BUFFER
     # ========================================================
 
-    buffer = RolloutBuffer()
+    buffers = [
+        RolloutBuffer()
+        for _ in range(NUM_DRONES)
+    ]
 
     # ========================================================
     # LOGGING
@@ -112,13 +115,15 @@ def main():
         # GRU HIDDEN STATES
         # ====================================================
 
-        actor_hidden = agent.actor.init_hidden(
-            batch_size=1
-        )
+        actor_hiddens = [
+            agent.actor.init_hidden(batch_size=1)
+            for _ in range(NUM_DRONES)
+        ]
 
-        critic_hidden = agent.critic.init_hidden(
-            batch_size=1
-        )
+        critic_hiddens = [
+            agent.critic.init_hidden(batch_size=1)
+            for _ in range(NUM_DRONES)
+        ]
 
         # ====================================================
         # EPISODE LOOP
@@ -138,6 +143,10 @@ def main():
             # ACTION SELECTION
             # ================================================
 
+            next_actor_hiddens = []
+
+            next_critic_hiddens = []
+
             for drone_idx in range(NUM_DRONES):
 
                 action, log_prob, value, \
@@ -145,8 +154,8 @@ def main():
                 next_critic_hidden = agent.select_action(
                     obs[drone_idx],
                     state,
-                    actor_hidden,
-                    critic_hidden
+                    actor_hiddens[drone_idx],
+                    critic_hiddens[drone_idx]
                 )
 
                 action = clip_actions(action)
@@ -157,6 +166,14 @@ def main():
 
                 values.append(value)
 
+                next_actor_hiddens.append(
+                    next_actor_hidden
+                )
+
+                next_critic_hiddens.append(
+                    next_critic_hidden
+                )
+            
             # ================================================
             # ENV STEP
             # ================================================
@@ -177,17 +194,19 @@ def main():
             # STORE IN BUFFER
             # ================================================
 
-            buffer.add(
-                obs=np.mean(obs, axis=0),
-                state=state,
-                action=np.mean(actions, axis=0),
-                log_prob=np.mean(log_probs),
-                value=np.mean(values),
-                reward=reward,
-                done=done,
-                actor_hidden=actor_hidden,
-                critic_hidden=critic_hidden
-            )
+            for drone_idx in range(NUM_DRONES):
+
+                buffers[drone_idx].add(
+                    obs=obs[drone_idx],
+                    state=state,
+                    action=actions[drone_idx],
+                    log_prob=log_probs[drone_idx],
+                    value=values[drone_idx],
+                    reward=rewards[drone_idx],
+                    done=done,
+                    actor_hidden=actor_hiddens[drone_idx],
+                    critic_hidden=critic_hiddens[drone_idx]
+                )
 
             # ================================================
             # UPDATE STATES
@@ -197,9 +216,9 @@ def main():
 
             state = next_state
 
-            actor_hidden = next_actor_hidden
+            actor_hidden = next_actor_hiddens
 
-            critic_hidden = next_critic_hidden
+            critic_hidden = next_critic_hiddens
 
             # ================================================
             # PPO UPDATE
@@ -207,31 +226,34 @@ def main():
 
             if timestep % UPDATE_TIMESTEPS == 0:
 
-                with torch.no_grad():
+                for drone_idx in range(NUM_DRONES):
 
-                    state_tensor = torch.FloatTensor(
-                        state
-                    ).unsqueeze(0).unsqueeze(0).to(device)
+                    with torch.no_grad():
 
-                    last_value, _ = agent.critic(
-                        state_tensor,
-                        critic_hidden
+                        state_tensor = torch.FloatTensor(
+                            state
+                        ).unsqueeze(0).unsqueeze(0).to(device)
+
+                        last_value, _ = agent.critic(
+                            state_tensor,
+                            critic_hiddens[drone_idx]
+                        )
+
+                        last_value = last_value.item()
+
+                    buffers[drone_idx].compute_returns_and_advantages(
+                        last_value
                     )
 
-                    last_value = last_value.item()
+                    agent.update(
+                        buffers[drone_idx]
+                    )
 
-                buffer.compute_returns_and_advantages(
-                    last_value
-                )
-
-                agent.update(buffer)
-
-                buffer.clear()
+                    buffers[drone_idx].clear()
 
                 print(
                     f"UPDATE COMPLETED @ timestep {timestep}"
                 )
-
             # ================================================
             # DONE
             # ================================================
@@ -278,7 +300,7 @@ def main():
 
             plot_trajectories(
                 env.trajectory_history,
-                target_positions=None,
+                target_positions=env.target_history,
                 save_path=f"plots/trajectories/episode_{episode}.png",
                 show_plot=False
             )

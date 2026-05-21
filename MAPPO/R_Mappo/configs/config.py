@@ -4,7 +4,7 @@
 
 NUM_DRONES = 3
 
-MAX_EPISODES = 5000
+MAX_EPISODES = 1000
 
 MAX_STEPS = 500
 
@@ -53,7 +53,7 @@ HIDDEN_DIM = 128
 # TRAINING
 # ============================================================
 
-UPDATE_TIMESTEPS = 2048
+UPDATE_TIMESTEPS = 1024
 
 SAVE_INTERVAL = 50
 
