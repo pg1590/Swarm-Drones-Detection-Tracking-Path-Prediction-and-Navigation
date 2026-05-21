@@ -24,10 +24,10 @@ class DroneSwarmEnv(gym.Env):
 
         self.gui = gui
 
-        self.angular_reward_scale = 2.0
+        self.angular_reward_scale = 8.0
         self.intercept_reward_scale = 3.0
         self.escape_block_reward_scale = 2.5
-        self.parallel_penalty_scale = 1.5
+        self.parallel_penalty_scale = 5.0
 
         # =====================================================
         # PYBULLET
@@ -113,7 +113,7 @@ class DroneSwarmEnv(gym.Env):
             np.random.uniform(-0.05, 0.05),
             np.random.uniform(-0.05, 0.05)
         ])
-        self.target_speed = 0.06
+        self.target_speed = 0.045
         # =====================================================
         # DRONES
         # =====================================================
@@ -274,7 +274,7 @@ class DroneSwarmEnv(gym.Env):
                 pos - self.target_pos
             )
 
-            reward = -target_distance*0.3
+            reward = -target_distance*0.1
 
             # =================================================
             # COLLISION PENALTY
@@ -570,6 +570,33 @@ class DroneSwarmEnv(gym.Env):
         # APPLY GLOBAL REWARDS
         # ---------------------------------
 
+        # ---------------------------------
+        # ROLE DIVERSITY REWARD
+        # ---------------------------------
+
+        diversity_reward = 0.0
+
+        for i in range(len(positions)):
+
+            for j in range(i + 1, len(positions)):
+
+                rel_i = positions[i] - self.target_pos
+                rel_j = positions[j] - self.target_pos
+
+                ni = np.linalg.norm(rel_i)
+                nj = np.linalg.norm(rel_j)
+
+                if ni > 1e-5 and nj > 1e-5:
+
+                    rel_i /= ni
+                    rel_j /= nj
+
+                    cosine = np.dot(rel_i, rel_j)
+
+                    diversity_reward += (
+                        1.0 - cosine
+                    )
+
         global_reward = 0.0
 
         global_reward += (
@@ -591,7 +618,7 @@ class DroneSwarmEnv(gym.Env):
             self.parallel_penalty_scale
             * parallel_penalty
         )
-
+        global_reward += 4.0 * diversity_reward
         rewards = [
             r + global_reward
             for r in rewards
