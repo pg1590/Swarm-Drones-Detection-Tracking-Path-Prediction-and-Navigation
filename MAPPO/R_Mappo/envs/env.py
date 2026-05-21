@@ -24,6 +24,11 @@ class DroneSwarmEnv(gym.Env):
 
         self.gui = gui
 
+        self.angular_reward_scale = 2.0
+        self.intercept_reward_scale = 3.0
+        self.escape_block_reward_scale = 2.5
+        self.parallel_penalty_scale = 1.5
+
         # =====================================================
         # PYBULLET
         # =====================================================
@@ -108,7 +113,7 @@ class DroneSwarmEnv(gym.Env):
             np.random.uniform(-0.05, 0.05),
             np.random.uniform(-0.05, 0.05)
         ])
-
+        self.target_speed = 0.06
         # =====================================================
         # DRONES
         # =====================================================
@@ -188,8 +193,52 @@ class DroneSwarmEnv(gym.Env):
         p.stepSimulation()
 
         # =====================================================
-        # MOVE TARGET
+        # EVASIVE TARGET POLICY
         # =====================================================
+
+        drone_positions_temp = []
+
+        for drone in self.drones:
+
+            pos, _ = p.getBasePositionAndOrientation(drone)
+
+            drone_positions_temp.append(
+                np.array(pos[:2])
+            )
+
+        swarm_center = np.mean(
+            np.array(drone_positions_temp),
+            axis=0
+        )
+
+        escape_vec = (
+            self.target_pos - swarm_center
+        )
+
+        escape_norm = np.linalg.norm(
+            escape_vec
+        )
+
+        if escape_norm > 1e-5:
+
+            escape_vec /= escape_norm
+
+        noise = np.random.randn(2) * 0.2
+
+        target_motion = (
+            0.85 * escape_vec
+            + 0.15 * noise
+        )
+
+        target_motion /= (
+            np.linalg.norm(target_motion)
+            + 1e-8
+        )
+
+        self.target_velocity = (
+            target_motion
+            * self.target_speed
+        )
 
         self.target_pos += self.target_velocity
 
@@ -225,7 +274,7 @@ class DroneSwarmEnv(gym.Env):
                 pos - self.target_pos
             )
 
-            reward = -target_distance
+            reward = -target_distance*0.3
 
             # =================================================
             # COLLISION PENALTY
@@ -379,6 +428,174 @@ class DroneSwarmEnv(gym.Env):
         self.target_history.append(
             self.target_pos.copy()
         )
+
+        # =====================================================
+        # GLOBAL SWARM REWARDS
+        # =====================================================
+
+        # ---------------------------------
+        # ANGULAR COVERAGE
+        # ---------------------------------
+
+        angles = []
+
+        for pos in positions:
+
+            dx = pos[0] - self.target_pos[0]
+            dy = pos[1] - self.target_pos[1]
+
+            angle = np.arctan2(dy, dx)
+
+            angles.append(angle)
+
+        angles = np.sort(np.array(angles))
+
+        angular_gaps = []
+
+        for i in range(len(angles)):
+
+            next_i = (i + 1) % len(angles)
+
+            gap = angles[next_i] - angles[i]
+
+            if gap < 0:
+                gap += 2 * np.pi
+
+            angular_gaps.append(gap)
+
+        largest_gap = max(angular_gaps)
+
+        coverage_reward = (
+            (2 * np.pi - largest_gap)
+            / (2 * np.pi)
+        )
+
+        # ---------------------------------
+        # INTERCEPTION REWARD
+        # ---------------------------------
+
+        target_speed = np.linalg.norm(
+            self.target_velocity
+        )
+
+        intercept_reward = 0.0
+
+        if target_speed > 1e-5:
+
+            target_dir = (
+                self.target_velocity
+                / target_speed
+            )
+
+            for pos in positions:
+
+                rel = pos - self.target_pos
+
+                projection = np.dot(
+                    rel,
+                    target_dir
+                )
+
+                intercept_reward += projection
+
+        # ---------------------------------
+        # PARALLEL CHASING PENALTY
+        # ---------------------------------
+
+        parallel_penalty = 0.0
+
+        velocities = []
+
+        for drone in self.drones:
+
+            vel, _ = p.getBaseVelocity(drone)
+
+            velocities.append(
+                np.array(vel[:2])
+            )
+
+        for i in range(len(velocities)):
+
+            for j in range(i + 1, len(velocities)):
+
+                vi = velocities[i]
+                vj = velocities[j]
+
+                ni = np.linalg.norm(vi)
+                nj = np.linalg.norm(vj)
+
+                if ni > 1e-5 and nj > 1e-5:
+
+                    cos_sim = (
+                        np.dot(vi, vj)
+                        / (ni * nj)
+                    )
+
+                    parallel_penalty += cos_sim
+
+        # ---------------------------------
+        # ESCAPE BLOCK REWARD
+        # ---------------------------------
+
+        escape_dir = -self.target_velocity
+
+        escape_norm = np.linalg.norm(
+            escape_dir
+        )
+
+        escape_block_reward = 0.0
+
+        if escape_norm > 1e-5:
+
+            escape_dir /= escape_norm
+
+            for pos in positions:
+
+                rel = pos - self.target_pos
+
+                rel_norm = np.linalg.norm(rel)
+
+                if rel_norm > 1e-5:
+
+                    rel /= rel_norm
+
+                    alignment = np.dot(
+                        rel,
+                        escape_dir
+                    )
+
+                    escape_block_reward += alignment
+
+        # ---------------------------------
+        # APPLY GLOBAL REWARDS
+        # ---------------------------------
+
+        global_reward = 0.0
+
+        global_reward += (
+            self.angular_reward_scale
+            * coverage_reward
+        )
+
+        global_reward += (
+            self.intercept_reward_scale
+            * intercept_reward
+        )
+
+        global_reward += (
+            self.escape_block_reward_scale
+            * escape_block_reward
+        )
+
+        global_reward -= (
+            self.parallel_penalty_scale
+            * parallel_penalty
+        )
+
+        rewards = [
+            r + global_reward
+            for r in rewards
+        ]
         next_obs = self._get_obs()
 
         return (

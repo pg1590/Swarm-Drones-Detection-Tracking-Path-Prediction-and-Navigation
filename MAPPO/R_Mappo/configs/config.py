@@ -4,7 +4,7 @@
 
 NUM_DRONES = 3
 
-MAX_EPISODES = 1000
+MAX_EPISODES = 500
 
 MAX_STEPS = 500
 
@@ -28,9 +28,9 @@ PPO_EPOCHS = 10
 # LEARNING RATES
 # ============================================================
 
-LR_ACTOR = 1e-4
+LR_ACTOR = 3e-4
 
-LR_CRITIC = 1e-4
+LR_CRITIC = 3e-4
 
 
 # ============================================================
@@ -66,4 +66,4 @@ SEED = 42
 
 MODEL_PATH = "models/recurrent_mappo_latest.pth"
 
-BEST_MODEL_PATH = "models/recurrent_mappo_best.pth"
+BEST_MODEL_PATH = "models/recurrent_mappo_best_run3.pth"

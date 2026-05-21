@@ -216,9 +216,9 @@ def main():
 
             state = next_state
 
-            actor_hidden = next_actor_hiddens
+            actor_hiddens = next_actor_hiddens
 
-            critic_hidden = next_critic_hiddens
+            critic_hiddens = next_critic_hiddens
 
             # ================================================
             # PPO UPDATE

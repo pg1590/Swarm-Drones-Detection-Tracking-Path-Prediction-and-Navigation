@@ -1,6 +1,7 @@
 import time
 import numpy as np
 import torch
+import pybullet as p
 
 from envs.env import DroneSwarmEnv
 
@@ -244,9 +245,9 @@ def main():
 
             state = next_state
 
-            actor_hidden = next_actor_hiddens
+            actor_hiddens = next_actor_hiddens
 
-            critic_hidden = next_critic_hiddens
+            critic_hiddens = next_critic_hiddens
 
             # ================================================
             # SLOW DOWN FOR VISUALIZATION
