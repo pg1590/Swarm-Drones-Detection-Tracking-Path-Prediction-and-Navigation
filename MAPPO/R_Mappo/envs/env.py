@@ -33,6 +33,8 @@ class DroneSwarmEnv(gym.Env):
             "mean_distance": [],
             "min_distance": [],
             "coverage": [],
+            "escape_gap": [],
+            "velocity_diversity": [],
         }
         # =====================================================
         # PYBULLET
@@ -75,6 +77,7 @@ class DroneSwarmEnv(gym.Env):
             + 2    # own vel
             + 2    # relative target pos
             + 2    # target velocity
+            + 2    # future target relative pos
             + (self.num_drones - 1) * 2
         )       
 
@@ -118,7 +121,7 @@ class DroneSwarmEnv(gym.Env):
             np.random.uniform(-0.05, 0.05),
             np.random.uniform(-0.05, 0.05)
         ])
-        self.target_speed = 0.045
+        self.target_speed = 0.02
         # =====================================================
         # DRONES
         # =====================================================
@@ -185,21 +188,35 @@ class DroneSwarmEnv(gym.Env):
 
             action = actions[i]
 
-            vx = float(action[0])
-            vy = float(action[1])
+            ax = float(action[0]) * 0.25
+            ay = float(action[1]) * 0.25
 
-            pos, orn = p.getBasePositionAndOrientation(drone)
+            current_vel, ang_vel = p.getBaseVelocity(drone)
 
-            new_pos = [
-                pos[0] + vx * 0.05,
-                pos[1] + vy * 0.05,
-                0.2
-            ]
+            current_vel = np.array(current_vel[:2])
 
-            p.resetBasePositionAndOrientation(
+            # integrate acceleration
+            new_vel = current_vel + np.array([ax, ay])
+
+            # speed limit
+            speed = np.linalg.norm(new_vel)
+
+            max_speed = 1.2
+
+            if speed > max_speed:
+                new_vel = (
+                    new_vel / speed
+                ) * max_speed
+
+            vz = current_vel[1] * 0.0
+
+            p.resetBaseVelocity(
                 drone,
-                new_pos,
-                orn
+                linearVelocity=[
+                    new_vel[0],
+                    new_vel[1],
+                    0
+                ]
             )
 
         p.stepSimulation()
@@ -238,8 +255,8 @@ class DroneSwarmEnv(gym.Env):
         noise = np.random.randn(2) * 0.2
 
         target_motion = (
-            0.65 * escape_vec
-            + 0.35 * noise
+            0.85 * escape_vec
+            + 0.15 * noise
         )
 
         target_motion /= (
@@ -305,6 +322,12 @@ class DroneSwarmEnv(gym.Env):
                 20.0 * progress_reward
                 + distance_reward
             )
+
+            # =====================================
+            # TIME PENALTY
+            # =====================================
+
+            reward -= 0.03
 
             # =====================================
             # VELOCITY ALIGNMENT
@@ -380,36 +403,36 @@ class DroneSwarmEnv(gym.Env):
 
                 reward += 1.0
 
-            # =================================================
-            # ENCIRCLEMENT REWARD
-            # =================================================
+            # # =================================================
+            # # ENCIRCLEMENT REWARD
+            # # =================================================
 
-            angles = []
+            # angles = []
 
-            for j, other_drone in enumerate(self.drones):
+            # for j, other_drone in enumerate(self.drones):
 
-                if i == j:
-                    continue
+            #     if i == j:
+            #         continue
 
-                other_pos, _ = p.getBasePositionAndOrientation(
-                    other_drone
-                )
+            #     other_pos, _ = p.getBasePositionAndOrientation(
+            #         other_drone
+            #     )
 
-                other_pos = np.array(other_pos[:2])
+            #     other_pos = np.array(other_pos[:2])
 
-                vec = other_pos - self.target_pos
+            #     vec = other_pos - self.target_pos
 
-                angle = np.arctan2(vec[1], vec[0])
+            #     angle = np.arctan2(vec[1], vec[0])
 
-                angles.append(angle)
+            #     angles.append(angle)
 
-            if len(angles) >= 2:
+            # if len(angles) >= 2:
 
-                angles = np.sort(angles)
+            #     angles = np.sort(angles)
 
-                angular_spread = angles[-1] - angles[0]
+            #     angular_spread = angles[-1] - angles[0]
 
-                reward += 0.5 * angular_spread
+            #     reward += 0.5 * angular_spread
             
 
             # =================================================
@@ -473,7 +496,14 @@ class DroneSwarmEnv(gym.Env):
             rewards.append(reward)
             capture = False
 
-            if target_distance < 0.8:
+            close_drones = 0
+
+            for pos in positions:
+
+                if np.linalg.norm(pos - self.target_pos) < 1.2:
+                    close_drones += 1
+
+            if close_drones >= 2:
                 reward += 100.0
                 capture = True
 
@@ -481,6 +511,27 @@ class DroneSwarmEnv(gym.Env):
 
         if capture:
             dones = [True] * self.num_drones
+
+
+        # =====================================
+        # TEAM SPREAD / ENCIRCLEMENT
+        # =====================================
+
+        spread_reward = 0.0
+
+        for i in range(self.num_drones):
+
+            for j in range(i + 1, self.num_drones):
+
+                pair_dist = np.linalg.norm(
+                    positions[i] - positions[j]
+                )
+
+                # encourage spacing
+                spread_reward += min(pair_dist, 6.0)
+
+        spread_reward *= 0.8
+
         # =====================================================
         # STORE TRAJECTORIES
         # =====================================================
@@ -545,8 +596,10 @@ class DroneSwarmEnv(gym.Env):
 
         future_target = (
             self.target_pos
-            + 8.0 * self.target_velocity
+            + 4.0 * self.target_velocity
         )
+
+        future_rel = future_target - pos
 
         for pos in positions:
 
@@ -555,7 +608,7 @@ class DroneSwarmEnv(gym.Env):
             )
 
             intercept_reward += (
-                -future_distance
+                3.0 / (future_distance + 1.0)
             )
 
         # ---------------------------------
@@ -593,10 +646,24 @@ class DroneSwarmEnv(gym.Env):
 
                     parallel_penalty += cos_sim
 
+
+        # ---------------------------------
+        # VELOCITY DIVERSITY
+        # ---------------------------------
+
+        velocity_diversity = 0.0
+
+        for i in range(len(velocities)):
+
+            for j in range(i + 1, len(velocities)):
+
+                velocity_diversity += np.linalg.norm(
+                    velocities[i] - velocities[j]
+                )
+
         # ---------------------------------
         # ESCAPE BLOCK REWARD
         # ---------------------------------
-
         escape_dir = -self.target_velocity
 
         escape_norm = np.linalg.norm(
@@ -678,6 +745,7 @@ class DroneSwarmEnv(gym.Env):
             self.parallel_penalty_scale
             * parallel_penalty
         )
+        global_reward+=spread_reward
         global_reward += 4.0 * diversity_reward
         rewards = [
             r + global_reward
@@ -716,6 +784,14 @@ class DroneSwarmEnv(gym.Env):
 
         self.debug_stats["coverage"].append(
             coverage_reward
+        )
+
+        self.debug_stats["escape_gap"].append(
+            largest_gap
+        )
+
+        self.debug_stats["velocity_diversity"].append(
+            velocity_diversity
         )
         return (
             next_obs,
@@ -766,6 +842,18 @@ class DroneSwarmEnv(gym.Env):
 
             obs.extend(self.target_velocity)
 
+            # =================================================
+            # FUTURE TARGET POSITION
+            # =================================================
+
+            future_target = (
+                self.target_pos
+                + 4.0 * self.target_velocity
+            )
+
+            future_rel = future_target - pos
+
+            obs.extend(future_rel)
             # =================================================
             # NEIGHBOR RELATIVE POSITIONS
             # =================================================

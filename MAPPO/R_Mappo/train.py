@@ -18,7 +18,12 @@ from algo.utils import (
 from plots.trajectory_plotter import (
     plot_trajectories,
     plot_rewards,
-    plot_smoothed_rewards
+    plot_smoothed_rewards,
+    plot_capture_rate,
+    plot_mean_distance,
+    plot_coverage,
+    plot_escape_gap,
+    plot_velocity_diversity
 )
 
 from configs.config import *
@@ -259,6 +264,16 @@ def main():
             # ================================================
 
             if done:
+
+                # reset recurrent memories
+                for drone_idx in range(NUM_DRONES):
+
+                    actor_hiddens[drone_idx] = \
+                        agent.actor.init_hidden(1)
+
+                    critic_hiddens[drone_idx] = \
+                        agent.critic.init_hidden(1)
+
                 break
 
         # ====================================================
@@ -320,6 +335,32 @@ def main():
                 save_path="plots/rewards/smoothed_reward_curve.png",
                 show_plot=False
             )
+
+            plot_capture_rate(
+                env.debug_stats["capture_rate"],
+                save_path="plots/capture_rate.png"
+            )
+
+            plot_mean_distance(
+                env.debug_stats["mean_distance"],
+                save_path="plots/mean_distance.png"
+            )
+
+            plot_coverage(
+                env.debug_stats["coverage"],
+                save_path="plots/coverage.png"
+            )
+
+            plot_escape_gap(
+                env.debug_stats["escape_gap"],
+                save_path="plots/escape_gap.png"
+            )
+
+            plot_velocity_diversity(
+                env.debug_stats["velocity_diversity"],
+                save_path="plots/velocity_diversity.png"
+            )
+
 
     # ========================================================
     # FINAL SAVE

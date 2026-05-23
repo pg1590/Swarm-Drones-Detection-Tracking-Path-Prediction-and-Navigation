@@ -360,3 +360,157 @@ def plot_smoothed_rewards(
         plt.show()
 
     plt.close()
+
+def plot_capture_rate(
+    capture_history,
+    window=50,
+    save_path=None
+):
+
+    capture_history = np.array(
+        capture_history
+    )
+
+    smoothed = np.convolve(
+        capture_history,
+        np.ones(window) / window,
+        mode='valid'
+    )
+
+    plt.figure(figsize=(10, 5))
+
+    plt.plot(smoothed)
+
+    plt.title(
+        "Capture Rate"
+    )
+
+    plt.xlabel("Episode")
+
+    plt.ylabel("Capture Probability")
+
+    plt.grid(True)
+
+    if save_path is not None:
+
+        plt.savefig(
+            save_path,
+            bbox_inches='tight'
+        )
+
+    plt.close()
+
+
+def plot_mean_distance(
+    distance_history,
+    save_path=None
+):
+
+    plt.figure(figsize=(10, 5))
+
+    plt.plot(distance_history)
+
+    plt.title(
+        "Mean Drone-Target Distance"
+    )
+
+    plt.xlabel("Episode")
+
+    plt.ylabel("Distance")
+
+    plt.grid(True)
+
+    if save_path is not None:
+
+        plt.savefig(
+            save_path,
+            bbox_inches='tight'
+        )
+
+    plt.close()
+
+
+def plot_coverage(
+    coverage_history,
+    save_path=None
+):
+
+    plt.figure(figsize=(10, 5))
+
+    plt.plot(coverage_history)
+
+    plt.title(
+        "Angular Coverage Reward"
+    )
+
+    plt.xlabel("Episode")
+
+    plt.ylabel("Coverage")
+
+    plt.grid(True)
+
+    if save_path is not None:
+
+        plt.savefig(
+            save_path,
+            bbox_inches='tight'
+        )
+
+    plt.close()
+
+
+def plot_escape_gap(
+    gap_history,
+    save_path=None
+):
+
+    plt.figure(figsize=(10, 5))
+
+    plt.plot(gap_history)
+
+    plt.title(
+        "Largest Escape Corridor"
+    )
+
+    plt.xlabel("Episode")
+
+    plt.ylabel("Angular Gap (rad)")
+
+    plt.grid(True)
+
+    if save_path is not None:
+
+        plt.savefig(
+            save_path,
+            bbox_inches='tight'
+        )
+
+    plt.close()
+
+def plot_velocity_diversity(
+    diversity_history,
+    save_path=None
+):
+
+    plt.figure(figsize=(10, 5))
+
+    plt.plot(diversity_history)
+
+    plt.title(
+        "Velocity Diversity"
+    )
+
+    plt.xlabel("Episode")
+
+    plt.ylabel("Diversity")
+
+    plt.grid(True)
+
+    if save_path is not None:
+
+        plt.savefig(
+            save_path,
+            bbox_inches='tight'
+        )
+
+    plt.close()

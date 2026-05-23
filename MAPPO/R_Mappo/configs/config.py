@@ -4,7 +4,7 @@
 
 NUM_DRONES = 3
 
-MAX_EPISODES = 500
+MAX_EPISODES = 1000
 
 MAX_STEPS = 500
 
@@ -66,4 +66,4 @@ SEED = 42
 
 MODEL_PATH = "models/recurrent_mappo_latest.pth"
 
-BEST_MODEL_PATH = "models/recurrent_mappo_best_run4.pth"
+BEST_MODEL_PATH = "models/recurrent_mappo_best_run6.pth"

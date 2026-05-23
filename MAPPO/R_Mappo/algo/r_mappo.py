@@ -179,7 +179,7 @@ class R_MAPPO:
 
             dist, _ = self.actor(
                 obs,
-                actor_hidden_states[:, 0:1, :]
+                actor_hidden_states[:, 0:1, :].contiguous()
             )
 
             new_log_probs = dist.log_prob(actions)\
