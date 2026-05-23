@@ -27,7 +27,7 @@ class DroneSwarmEnv(gym.Env):
         self.angular_reward_scale = 3.0
         self.intercept_reward_scale = 3.0
         self.escape_block_reward_scale = 2.5
-        self.parallel_penalty_scale = 1.5
+        self.parallel_penalty_scale = 0.3
         self.debug_stats = {
             "capture_rate": [],
             "mean_distance": [],
@@ -121,7 +121,7 @@ class DroneSwarmEnv(gym.Env):
             np.random.uniform(-0.05, 0.05),
             np.random.uniform(-0.05, 0.05)
         ])
-        self.target_speed = 0.02
+        self.target_speed = 0.05
         # =====================================================
         # DRONES
         # =====================================================
@@ -299,8 +299,26 @@ class DroneSwarmEnv(gym.Env):
             # TARGET DISTANCE
             # =================================================
 
-            target_distance = np.linalg.norm(
+            target_vel = np.array(
+                self.target_velocity[:2]
+            )
+
+            future_target = (
+                self.target_pos
+                + 3.0 * target_vel
+            )
+
+            current_distance = np.linalg.norm(
                 pos - self.target_pos
+            )
+
+            future_distance = np.linalg.norm(
+                pos - future_target
+            )
+
+            target_distance = (
+                0.4 * current_distance
+                + 0.6 * future_distance
             )
 
             # =====================================
@@ -474,8 +492,7 @@ class DroneSwarmEnv(gym.Env):
 
             largest_gap = max(largest_gap, wrap_gap)
 
-            # smaller gap = better enclosure
-            reward += (2 * np.pi - largest_gap)
+           
 
 
             # =================================================
@@ -498,16 +515,19 @@ class DroneSwarmEnv(gym.Env):
 
             close_drones = 0
 
-            for pos in positions:
+            for ppos in positions:
 
-                if np.linalg.norm(pos - self.target_pos) < 1.2:
+                if np.linalg.norm(ppos - self.target_pos) < 1.0:
                     close_drones += 1
 
-            if close_drones >= 2:
-                reward += 100.0
-                capture = True
+            capture=close_drones >= 2
+
+            if capture:
+                reward += 300.0
+    
 
             dones.append(done)
+            rewards.append(reward)
 
         if capture:
             dones = [True] * self.num_drones
@@ -530,7 +550,7 @@ class DroneSwarmEnv(gym.Env):
                 # encourage spacing
                 spread_reward += min(pair_dist, 6.0)
 
-        spread_reward *= 0.8
+        spread_reward *= 0.15
 
         # =====================================================
         # STORE TRAJECTORIES
@@ -583,7 +603,11 @@ class DroneSwarmEnv(gym.Env):
             (2 * np.pi - largest_gap)
             / (2 * np.pi)
         )
+        team_bonus = 15.0 * coverage_reward
 
+        for i in range(self.num_drones):
+            rewards[i] += team_bonus
+        
         # ---------------------------------
         # INTERCEPTION REWARD
         # ---------------------------------
@@ -598,8 +622,6 @@ class DroneSwarmEnv(gym.Env):
             self.target_pos
             + 4.0 * self.target_velocity
         )
-
-        future_rel = future_target - pos
 
         for pos in positions:
 
@@ -745,8 +767,8 @@ class DroneSwarmEnv(gym.Env):
             self.parallel_penalty_scale
             * parallel_penalty
         )
-        global_reward+=spread_reward
-        global_reward += 4.0 * diversity_reward
+        global_reward+=spread_reward*0.3
+        global_reward += 1.5 * diversity_reward
         rewards = [
             r + global_reward
             for r in rewards
@@ -793,6 +815,9 @@ class DroneSwarmEnv(gym.Env):
         self.debug_stats["velocity_diversity"].append(
             velocity_diversity
         )
+        if capture:
+            rewards = [r + 500.0 for r in rewards]
+
         return (
             next_obs,
             rewards,
