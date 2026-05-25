@@ -718,14 +718,6 @@ class DroneSwarmEnv(gym.Env):
         #             )
 
         #             escape_block_reward += alignment
-        team_distance = np.mean(all_distances)
-
-        team_reward = 3.0 / (team_distance + 1.0)
-
-        rewards = [
-            r + team_reward
-            for r in rewards
-        ]
 
         # ---------------------------------
         # APPLY GLOBAL REWARDS
@@ -788,6 +780,14 @@ class DroneSwarmEnv(gym.Env):
         next_obs = self._get_obs()
         all_distances = []
 
+        team_distance = np.mean(all_distances)
+
+        team_reward = 3.0 / (team_distance + 1.0)
+
+        rewards = [
+            r + team_reward
+            for r in rewards
+        ]
         for pos in positions:
 
             d = np.linalg.norm(
