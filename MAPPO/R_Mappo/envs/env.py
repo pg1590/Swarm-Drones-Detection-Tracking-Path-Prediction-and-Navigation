@@ -11,7 +11,7 @@ class DroneSwarmEnv(gym.Env):
         self,
         num_drones=3,
         gui=True,
-        max_steps=200
+        max_steps=300
     ):
 
         super(DroneSwarmEnv, self).__init__()
@@ -249,11 +249,11 @@ class DroneSwarmEnv(gym.Env):
 
             escape_vec /= escape_norm
 
-        noise = np.random.randn(2) * 0.2
+        noise = np.random.randn(2) * 0.05
 
         target_motion = (
-            0.5 * escape_vec
-            + 0.5 * noise
+            0.85 * escape_vec
+            + 0.15 * noise
         )
 
         target_motion /= (
@@ -368,8 +368,8 @@ class DroneSwarmEnv(gym.Env):
                 action,
                 target_motion_dir
             )
-            reward += 4.0 * pursuit_alignment
-            reward += 2.0 * velocity_match
+            reward += 1.5 * pursuit_alignment
+            reward += 0.5 * velocity_match
             # reward += -0.15 * np.linalg.norm(to_target)
             norm = np.linalg.norm(to_target)
 
@@ -544,6 +544,10 @@ class DroneSwarmEnv(gym.Env):
             if np.linalg.norm(ppos - self.target_pos) < 1.0:
                 close_drones += 1
 
+        team_close = close_drones / self.num_drones
+        for k in range(len(rewards)):
+            rewards[k] += 5.0 * team_close
+
         capture=close_drones >= 2
 
         if capture:
@@ -714,6 +718,14 @@ class DroneSwarmEnv(gym.Env):
         #             )
 
         #             escape_block_reward += alignment
+        team_distance = np.mean(all_distances)
+
+        team_reward = 3.0 / (team_distance + 1.0)
+
+        rewards = [
+            r + team_reward
+            for r in rewards
+        ]
 
         # ---------------------------------
         # APPLY GLOBAL REWARDS
@@ -748,10 +760,10 @@ class DroneSwarmEnv(gym.Env):
 
         global_reward = 0.0
 
-        global_reward += (
-            self.angular_reward_scale
-            * coverage_reward
-        )
+        # global_reward += (
+        #     self.angular_reward_scale
+        #     * coverage_reward
+        # )
 
         # global_reward += (
         #     self.intercept_reward_scale
