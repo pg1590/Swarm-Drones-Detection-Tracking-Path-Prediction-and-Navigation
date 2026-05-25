@@ -322,22 +322,8 @@ class DroneSwarmEnv(gym.Env):
             # PROGRESS REWARD
             # =====================================
 
-            progress_reward = (
-                self.prev_distances[i]
-                - target_distance
-            )
-
-            # =====================================
-            # DISTANCE REWARD
-            # =====================================
-
-           
-
-            reward = (
-                4.0 * progress_reward
-                
-            )
-            reward += -0.01 * current_distance
+            reward = 3.0 / (target_distance + 1.0)
+            # reward += -0.01 * current_distance
             # =====================================
             # TIME PENALTY
             # =====================================
@@ -519,7 +505,7 @@ class DroneSwarmEnv(gym.Env):
 
             if target_distance < 1.0:
 
-                reward += 10.0
+                reward += 3.0
 
             done = False
 
@@ -532,7 +518,7 @@ class DroneSwarmEnv(gym.Env):
     
 
             dones.append(done)
-            reward = np.clip(reward, -10.0, 10.0)
+            # reward = np.clip(reward, -10.0, 10.0)
             rewards.append(reward)
 
         capture = False
@@ -790,7 +776,7 @@ class DroneSwarmEnv(gym.Env):
 
         team_distance = np.mean(all_distances)
 
-        team_reward = 3.0 / (team_distance + 1.0)
+        team_reward = 8.0 / (team_distance + 1.0)
 
         rewards = [
             r + team_reward
