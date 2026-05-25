@@ -533,20 +533,6 @@ class DroneSwarmEnv(gym.Env):
         # TEAM SPREAD / ENCIRCLEMENT
         # =====================================
 
-        
-
-        for i in range(self.num_drones):
-
-            for j in range(i + 1, self.num_drones):
-
-                pair_dist = np.linalg.norm(
-                    positions[i] - positions[j]
-                )
-
-                # encourage spacing
-                spread_reward += min(pair_dist, 6.0)
-
-        spread_reward *= 0.15
 
         # =====================================================
         # STORE TRAJECTORIES
