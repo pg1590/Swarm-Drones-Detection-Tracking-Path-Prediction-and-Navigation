@@ -187,8 +187,8 @@ class DroneSwarmEnv(gym.Env):
 
             action = actions[i]
 
-            ax = float(action[0]) * 0.25
-            ay = float(action[1]) * 0.25
+            ax = float(action[0]) * 0.15
+            ay = float(action[1]) * 0.15
 
             current_vel, ang_vel = p.getBaseVelocity(drone)
 
@@ -370,7 +370,7 @@ class DroneSwarmEnv(gym.Env):
             )
             reward += 4.0 * pursuit_alignment
             reward += 2.0 * velocity_match
-            reward += -0.15 * to_target
+            reward += -0.15 * np.linalg.norm(to_target)
             norm = np.linalg.norm(to_target)
 
             if norm > 1e-5:
