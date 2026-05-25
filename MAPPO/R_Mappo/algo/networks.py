@@ -42,7 +42,9 @@ class RecurrentActor(nn.Module):
         self.fc_mean = nn.Linear(hidden_dim, action_dim)
 
         # Learnable std
-        self.log_std = nn.Parameter(torch.zeros(action_dim))
+        self.log_std = nn.Parameter(
+            torch.ones(action_dim) * -0.5
+        )
 
     def forward(self, obs, hidden_state):
 

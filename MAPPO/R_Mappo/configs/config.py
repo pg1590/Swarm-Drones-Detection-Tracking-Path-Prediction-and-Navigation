@@ -28,16 +28,16 @@ PPO_EPOCHS = 10
 # LEARNING RATES
 # ============================================================
 
-LR_ACTOR = 3e-4
+LR_ACTOR = 1e-4
 
-LR_CRITIC = 3e-4
+LR_CRITIC = 1e-4
 
 
 # ============================================================
 # PPO COEFFICIENTS
 # ============================================================
 
-ENTROPY_COEF = 0.01
+ENTROPY_COEF = 0.02
 
 VALUE_COEF = 0.5
 
@@ -53,7 +53,7 @@ HIDDEN_DIM = 128
 # TRAINING
 # ============================================================
 
-UPDATE_TIMESTEPS = 1024
+UPDATE_TIMESTEPS = 512
 
 SAVE_INTERVAL = 50
 
@@ -66,4 +66,4 @@ SEED = 42
 
 MODEL_PATH = "models/recurrent_mappo_latest.pth"
 
-BEST_MODEL_PATH = "models/recurrent_mappo_best_run6.pth"
+BEST_MODEL_PATH = "models/recurrent_mappo_best_run7.pth"

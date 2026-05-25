@@ -153,6 +153,11 @@ class R_MAPPO:
             (advantages - advantages.mean())
             / (advantages.std() + 1e-8)
         )
+        advantages = torch.clamp(
+            advantages,
+            -5.0,
+            5.0
+        )
 
         # =====================================================
         # RESHAPE FOR GRU

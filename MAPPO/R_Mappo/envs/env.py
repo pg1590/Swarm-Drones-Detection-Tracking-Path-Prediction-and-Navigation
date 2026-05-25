@@ -176,7 +176,6 @@ class DroneSwarmEnv(gym.Env):
 
         dones = []
 
-        next_obs = []
 
         positions = []
 
@@ -207,8 +206,6 @@ class DroneSwarmEnv(gym.Env):
                 new_vel = (
                     new_vel / speed
                 ) * max_speed
-
-            vz = current_vel[1] * 0.0
 
             p.resetBaseVelocity(
                 drone,
@@ -255,8 +252,8 @@ class DroneSwarmEnv(gym.Env):
         noise = np.random.randn(2) * 0.2
 
         target_motion = (
-            0.85 * escape_vec
-            + 0.15 * noise
+            0.5 * escape_vec
+            + 0.5 * noise
         )
 
         target_motion /= (
@@ -334,11 +331,11 @@ class DroneSwarmEnv(gym.Env):
             # DISTANCE REWARD
             # =====================================
 
-            distance_reward = -0.05 * target_distance
+           
 
             reward = (
-                20.0 * progress_reward
-                + distance_reward
+                5.0 * progress_reward
+                
             )
 
             # =====================================
@@ -370,7 +367,7 @@ class DroneSwarmEnv(gym.Env):
                         to_target
                     )
 
-                    reward += 2.0 * alignment
+                    reward += 0.5 * alignment
 
             # =================================================
             # COLLISION PENALTY
@@ -391,35 +388,35 @@ class DroneSwarmEnv(gym.Env):
 
                 if dist < 0.3:
 
-                    reward -= 15.0
+                    reward -= 5.0
 
             # =================================================
             # COHESION REWARD
             # =================================================
 
-            neighbor_distances = []
+            # neighbor_distances = []
 
-            for j, other_drone in enumerate(self.drones):
+            # for j, other_drone in enumerate(self.drones):
 
-                if i == j:
-                    continue
+            #     if i == j:
+            #         continue
 
-                other_pos, _ = p.getBasePositionAndOrientation(
-                    other_drone
-                )
+            #     other_pos, _ = p.getBasePositionAndOrientation(
+            #         other_drone
+            #     )
 
-                other_pos = np.array(other_pos[:2])
+            #     other_pos = np.array(other_pos[:2])
 
-                dist = np.linalg.norm(pos - other_pos)
+            #     dist = np.linalg.norm(pos - other_pos)
 
-                neighbor_distances.append(dist)
+            #     neighbor_distances.append(dist)
 
-            avg_neighbor_dist = np.mean(neighbor_distances)
+            # avg_neighbor_dist = np.mean(neighbor_distances)
 
-            # desired swarm spacing
-            if 1.0 < avg_neighbor_dist < 4.0:
+            # # desired swarm spacing
+            # if 1.0 < avg_neighbor_dist < 4.0:
 
-                reward += 1.0
+            #     reward += 1.0
 
             # # =================================================
             # # ENCIRCLEMENT REWARD
@@ -501,7 +498,7 @@ class DroneSwarmEnv(gym.Env):
 
             if target_distance < 1.0:
 
-                reward += 30.0
+                reward += 10.0
 
             done = False
 
@@ -510,26 +507,25 @@ class DroneSwarmEnv(gym.Env):
                 done = True
 
             self.prev_distances[i] = target_distance
-            rewards.append(reward)
-            capture = False
 
-            close_drones = 0
-
-            for ppos in positions:
-
-                if np.linalg.norm(ppos - self.target_pos) < 1.0:
-                    close_drones += 1
-
-            capture=close_drones >= 2
-
-            if capture:
-                reward += 300.0
     
 
             dones.append(done)
             rewards.append(reward)
 
+        capture = False
+
+        close_drones = 0
+
+        for ppos in positions:
+
+            if np.linalg.norm(ppos - self.target_pos) < 1.0:
+                close_drones += 1
+
+        capture=close_drones >= 2
+
         if capture:
+            rewards = [r + 100.0 for r in rewards]
             dones = [True] * self.num_drones
 
 
@@ -537,7 +533,7 @@ class DroneSwarmEnv(gym.Env):
         # TEAM SPREAD / ENCIRCLEMENT
         # =====================================
 
-        spread_reward = 0.0
+        
 
         for i in range(self.num_drones):
 
@@ -603,148 +599,144 @@ class DroneSwarmEnv(gym.Env):
             (2 * np.pi - largest_gap)
             / (2 * np.pi)
         )
-        team_bonus = 15.0 * coverage_reward
-
-        for i in range(self.num_drones):
-            rewards[i] += team_bonus
         
-        # ---------------------------------
-        # INTERCEPTION REWARD
-        # ---------------------------------
+        # # ---------------------------------
+        # # INTERCEPTION REWARD
+        # # ---------------------------------
 
-        target_speed = np.linalg.norm(
-            self.target_velocity
-        )
+        # target_speed = np.linalg.norm(
+        #     self.target_velocity
+        # )
 
-        intercept_reward = 0.0
+        # intercept_reward = 0.0
 
-        future_target = (
-            self.target_pos
-            + 4.0 * self.target_velocity
-        )
+        # future_target = (
+        #     self.target_pos
+        #     + 4.0 * self.target_velocity
+        # )
 
-        for pos in positions:
+        # for pos in positions:
 
-            future_distance = np.linalg.norm(
-                pos - future_target
-            )
+        #     future_distance = np.linalg.norm(
+        #         pos - future_target
+        #     )
 
-            intercept_reward += (
-                3.0 / (future_distance + 1.0)
-            )
+        #     intercept_reward += (
+        #         3.0 / (future_distance + 1.0)
+        #     )
 
-        # ---------------------------------
-        # PARALLEL CHASING PENALTY
-        # ---------------------------------
+        # # ---------------------------------
+        # # PARALLEL CHASING PENALTY
+        # # ---------------------------------
 
-        parallel_penalty = 0.0
+        # parallel_penalty = 0.0
 
-        velocities = []
+        # velocities = []
 
-        for drone in self.drones:
+        # for drone in self.drones:
 
-            vel, _ = p.getBaseVelocity(drone)
+        #     vel, _ = p.getBaseVelocity(drone)
 
-            velocities.append(
-                np.array(vel[:2])
-            )
+        #     velocities.append(
+        #         np.array(vel[:2])
+        #     )
 
-        for i in range(len(velocities)):
+        # for i in range(len(velocities)):
 
-            for j in range(i + 1, len(velocities)):
+        #     for j in range(i + 1, len(velocities)):
 
-                vi = velocities[i]
-                vj = velocities[j]
+        #         vi = velocities[i]
+        #         vj = velocities[j]
 
-                ni = np.linalg.norm(vi)
-                nj = np.linalg.norm(vj)
+        #         ni = np.linalg.norm(vi)
+        #         nj = np.linalg.norm(vj)
 
-                if ni > 1e-5 and nj > 1e-5:
+        #         if ni > 1e-5 and nj > 1e-5:
 
-                    cos_sim = (
-                        np.dot(vi, vj)
-                        / (ni * nj)
-                    )
+        #             cos_sim = (
+        #                 np.dot(vi, vj)
+        #                 / (ni * nj)
+        #             )
 
-                    parallel_penalty += cos_sim
+        #             parallel_penalty += cos_sim
 
 
-        # ---------------------------------
-        # VELOCITY DIVERSITY
-        # ---------------------------------
+        # # ---------------------------------
+        # # VELOCITY DIVERSITY
+        # # ---------------------------------
 
-        velocity_diversity = 0.0
+        # velocity_diversity = 0.0
 
-        for i in range(len(velocities)):
+        # for i in range(len(velocities)):
 
-            for j in range(i + 1, len(velocities)):
+        #     for j in range(i + 1, len(velocities)):
 
-                velocity_diversity += np.linalg.norm(
-                    velocities[i] - velocities[j]
-                )
+        #         velocity_diversity += np.linalg.norm(
+        #             velocities[i] - velocities[j]
+        #         )
 
-        # ---------------------------------
-        # ESCAPE BLOCK REWARD
-        # ---------------------------------
-        escape_dir = -self.target_velocity
+        # # ---------------------------------
+        # # ESCAPE BLOCK REWARD
+        # # ---------------------------------
+        # escape_dir = -self.target_velocity
 
-        escape_norm = np.linalg.norm(
-            escape_dir
-        )
+        # escape_norm = np.linalg.norm(
+        #     escape_dir
+        # )
 
-        escape_block_reward = 0.0
+        # escape_block_reward = 0.0
 
-        if escape_norm > 1e-5:
+        # if escape_norm > 1e-5:
 
-            escape_dir /= escape_norm
+        #     escape_dir /= escape_norm
 
-            for pos in positions:
+        #     for pos in positions:
 
-                rel = pos - self.target_pos
+        #         rel = pos - self.target_pos
 
-                rel_norm = np.linalg.norm(rel)
+        #         rel_norm = np.linalg.norm(rel)
 
-                if rel_norm > 1e-5:
+        #         if rel_norm > 1e-5:
 
-                    rel /= rel_norm
+        #             rel /= rel_norm
 
-                    alignment = np.dot(
-                        rel,
-                        escape_dir
-                    )
+        #             alignment = np.dot(
+        #                 rel,
+        #                 escape_dir
+        #             )
 
-                    escape_block_reward += alignment
+        #             escape_block_reward += alignment
 
         # ---------------------------------
         # APPLY GLOBAL REWARDS
         # ---------------------------------
 
-        # ---------------------------------
-        # ROLE DIVERSITY REWARD
-        # ---------------------------------
+        # # ---------------------------------
+        # # ROLE DIVERSITY REWARD
+        # # ---------------------------------
 
-        diversity_reward = 0.0
+        # diversity_reward = 0.0
 
-        for i in range(len(positions)):
+        # for i in range(len(positions)):
 
-            for j in range(i + 1, len(positions)):
+        #     for j in range(i + 1, len(positions)):
 
-                rel_i = positions[i] - self.target_pos
-                rel_j = positions[j] - self.target_pos
+        #         rel_i = positions[i] - self.target_pos
+        #         rel_j = positions[j] - self.target_pos
 
-                ni = np.linalg.norm(rel_i)
-                nj = np.linalg.norm(rel_j)
+        #         ni = np.linalg.norm(rel_i)
+        #         nj = np.linalg.norm(rel_j)
 
-                if ni > 1e-5 and nj > 1e-5:
+        #         if ni > 1e-5 and nj > 1e-5:
 
-                    rel_i /= ni
-                    rel_j /= nj
+        #             rel_i /= ni
+        #             rel_j /= nj
 
-                    cosine = np.dot(rel_i, rel_j)
+        #             cosine = np.dot(rel_i, rel_j)
 
-                    diversity_reward += (
-                        1.0 - cosine
-                    )
+        #             diversity_reward += (
+        #                 1.0 - cosine
+        #             )
 
         global_reward = 0.0
 
@@ -753,22 +745,22 @@ class DroneSwarmEnv(gym.Env):
             * coverage_reward
         )
 
-        global_reward += (
-            self.intercept_reward_scale
-            * intercept_reward
-        )
+        # global_reward += (
+        #     self.intercept_reward_scale
+        #     * intercept_reward
+        # )
 
-        global_reward += (
-            self.escape_block_reward_scale
-            * escape_block_reward
-        )
+        # global_reward += (
+        #     self.escape_block_reward_scale
+        #     * escape_block_reward
+        # )
 
-        global_reward -= (
-            self.parallel_penalty_scale
-            * parallel_penalty
-        )
-        global_reward+=spread_reward*0.3
-        global_reward += 1.5 * diversity_reward
+        # global_reward -= (
+        #     self.parallel_penalty_scale
+        #     * parallel_penalty
+        # )
+        # global_reward+=spread_reward*0.3
+        # global_reward += 1.5 * diversity_reward
         rewards = [
             r + global_reward
             for r in rewards
@@ -812,11 +804,9 @@ class DroneSwarmEnv(gym.Env):
             largest_gap
         )
 
-        self.debug_stats["velocity_diversity"].append(
-            velocity_diversity
-        )
-        if capture:
-            rewards = [r + 500.0 for r in rewards]
+        # self.debug_stats["velocity_diversity"].append(
+        #     velocity_diversity
+        # )
 
         return (
             next_obs,
