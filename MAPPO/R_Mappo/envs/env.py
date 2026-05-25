@@ -334,15 +334,15 @@ class DroneSwarmEnv(gym.Env):
            
 
             reward = (
-                15.0 * progress_reward
+                4.0 * progress_reward
                 
             )
-
+            reward += -0.01 * current_distance
             # =====================================
             # TIME PENALTY
             # =====================================
 
-            reward -= 0.03
+            # reward -= 0.03
 
             # =====================================
             # VELOCITY ALIGNMENT
@@ -370,7 +370,7 @@ class DroneSwarmEnv(gym.Env):
             )
             reward += 4.0 * pursuit_alignment
             reward += 2.0 * velocity_match
-            reward += -0.15 * np.linalg.norm(to_target)
+            # reward += -0.15 * np.linalg.norm(to_target)
             norm = np.linalg.norm(to_target)
 
             if norm > 1e-5:
@@ -532,6 +532,7 @@ class DroneSwarmEnv(gym.Env):
     
 
             dones.append(done)
+            reward = np.clip(reward, -10.0, 10.0)
             rewards.append(reward)
 
         capture = False
@@ -546,7 +547,7 @@ class DroneSwarmEnv(gym.Env):
         capture=close_drones >= 2
 
         if capture:
-            rewards = [r + 100.0 for r in rewards]
+            rewards = [r + 30.0 for r in rewards]
             dones = [True] * self.num_drones
 
 
