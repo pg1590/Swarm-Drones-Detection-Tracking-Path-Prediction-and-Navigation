@@ -11,7 +11,7 @@ class DroneSwarmEnv(gym.Env):
         self,
         num_drones=3,
         gui=True,
-        max_steps=500
+        max_steps=200
     ):
 
         super(DroneSwarmEnv, self).__init__()
@@ -121,7 +121,7 @@ class DroneSwarmEnv(gym.Env):
             np.random.uniform(-0.05, 0.05),
             np.random.uniform(-0.05, 0.05)
         ])
-        self.target_speed = 0.05
+        self.target_speed = 0.4
         # =====================================================
         # DRONES
         # =====================================================
@@ -200,7 +200,7 @@ class DroneSwarmEnv(gym.Env):
             # speed limit
             speed = np.linalg.norm(new_vel)
 
-            max_speed = 1.2
+            max_speed = 1.0
 
             if speed > max_speed:
                 new_vel = (
@@ -334,7 +334,7 @@ class DroneSwarmEnv(gym.Env):
            
 
             reward = (
-                5.0 * progress_reward
+                15.0 * progress_reward
                 
             )
 
@@ -349,7 +349,28 @@ class DroneSwarmEnv(gym.Env):
             # =====================================
 
             to_target = self.target_pos - pos
+            target_vel = self.target_velocity
+            
+            direction_to_target = to_target / (
+                np.linalg.norm(to_target) + 1e-6
+            )
 
+            target_motion_dir = target_vel / (
+                np.linalg.norm(target_vel) + 1e-6
+            )
+
+            pursuit_alignment = np.dot(
+                action,
+                direction_to_target
+            )
+
+            velocity_match = np.dot(
+                action,
+                target_motion_dir
+            )
+            reward += 4.0 * pursuit_alignment
+            reward += 2.0 * velocity_match
+            reward += -0.15 * to_target
             norm = np.linalg.norm(to_target)
 
             if norm > 1e-5:
