@@ -121,7 +121,7 @@ class DroneSwarmEnv(gym.Env):
             np.random.uniform(-0.05, 0.05),
             np.random.uniform(-0.05, 0.05)
         ])
-        self.target_speed = 0.4
+        self.target_speed = 0.18
         # =====================================================
         # DRONES
         # =====================================================
@@ -272,9 +272,11 @@ class DroneSwarmEnv(gym.Env):
         for k in range(2):
 
             if self.target_pos[k] > 8:
+                self.target_pos[k] = 8
                 self.target_velocity[k] *= -1
 
             if self.target_pos[k] < -8:
+                self.target_pos[k] = -8
                 self.target_velocity[k] *= -1
 
         # =====================================================
@@ -775,6 +777,11 @@ class DroneSwarmEnv(gym.Env):
             all_distances.append(d)
 
         team_distance = np.mean(all_distances)
+        if team_distance > 12:
+            rewards = [r - 20.0 for r in rewards]
+        
+        if team_distance > 15:
+            dones = [True] * self.num_drones
 
         team_reward = 8.0 / (team_distance + 1.0)
 

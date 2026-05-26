@@ -20,7 +20,7 @@ class R_MAPPO:
         lam=0.95,
         clip_eps=0.2,
         epochs=10,
-        entropy_coef=0.01,
+        entropy_coef=0.03,
         value_coef=0.5,
         hidden_dim=128
     ):
