@@ -24,7 +24,7 @@ class DroneSwarmEnv(gym.Env):
 
         self.gui = gui
 
-        self.angular_reward_scale = 3.0
+        self.angular_reward_scale = 1.5
         self.intercept_reward_scale = 3.0
         self.escape_block_reward_scale = 2.5
         self.parallel_penalty_scale = 0.3
@@ -78,7 +78,7 @@ class DroneSwarmEnv(gym.Env):
             + 2    # relative target pos
             + 2    # target velocity
             + 2    # future target relative pos
-            + (self.num_drones - 1) * 2
+            + (self.num_drones - 1) * 4
         )       
 
         self.observation_space = spaces.Box(
@@ -121,7 +121,7 @@ class DroneSwarmEnv(gym.Env):
             np.random.uniform(-0.05, 0.05),
             np.random.uniform(-0.05, 0.05)
         ])
-        self.target_speed = 0.18
+        self.target_speed = 0.12
         # =====================================================
         # DRONES
         # =====================================================
@@ -155,6 +155,22 @@ class DroneSwarmEnv(gym.Env):
             self.prev_distances[i] = np.linalg.norm(
                 pos - self.target_pos
             )
+
+        all_distances = []
+
+        for drone in self.drones:
+
+            pos, _ = p.getBasePositionAndOrientation(drone)
+
+            pos = np.array(pos[:2])
+
+            d = np.linalg.norm(
+                pos - self.target_pos
+            )
+
+            all_distances.append(d)
+
+        self.prev_team_distance = np.mean(all_distances)
         # =====================================================
         # TRAJECTORY HISTORY
         # =====================================================
@@ -282,7 +298,6 @@ class DroneSwarmEnv(gym.Env):
         # =====================================================
         # OBS + REWARD
         # =====================================================
-
         for i, drone in enumerate(self.drones):
 
             pos, _ = p.getBasePositionAndOrientation(drone)
@@ -316,15 +331,20 @@ class DroneSwarmEnv(gym.Env):
             )
 
             target_distance = (
-                0.4 * current_distance
-                + 0.6 * future_distance
+                0.7 * current_distance
+                + 0.3 * future_distance
             )
 
             # =====================================
             # PROGRESS REWARD
             # =====================================
 
-            reward = 3.0 / (target_distance + 1.0)
+            progress_reward = (
+                self.prev_distances[i]
+                - target_distance
+            )
+
+            reward = 8.0 * progress_reward
             # reward += -0.01 * current_distance
             # =====================================
             # TIME PENALTY
@@ -333,6 +353,7 @@ class DroneSwarmEnv(gym.Env):
             # reward -= 0.03
 
             # =====================================
+        
             # VELOCITY ALIGNMENT
             # =====================================
 
@@ -347,16 +368,26 @@ class DroneSwarmEnv(gym.Env):
                 np.linalg.norm(target_vel) + 1e-6
             )
 
-            pursuit_alignment = np.dot(
-                action,
-                direction_to_target
-            )
+            # pursuit_alignment = np.dot(
+            #     action,
+            #     direction_to_target
+            # )
+            vel_norm = np.linalg.norm(vel)
 
+            if vel_norm > 1e-6:
+                vel_dir = vel / vel_norm
+
+                pursuit_alignment = np.dot(
+                    vel_dir,
+                    direction_to_target
+                )
+
+                reward += 1.0 * pursuit_alignment
             velocity_match = np.dot(
-                action,
+                vel_dir,
                 target_motion_dir
             )
-            reward += 1.5 * pursuit_alignment
+            # reward += 1.5 * pursuit_alignment
             reward += 0.5 * velocity_match
             # reward += -0.15 * np.linalg.norm(to_target)
             norm = np.linalg.norm(to_target)
@@ -375,8 +406,6 @@ class DroneSwarmEnv(gym.Env):
                         vel_dir,
                         to_target
                     )
-
-                    reward += 0.5 * alignment
 
             # =================================================
             # COLLISION PENALTY
@@ -507,7 +536,7 @@ class DroneSwarmEnv(gym.Env):
 
             if target_distance < 1.0:
 
-                reward += 3.0
+                reward += 15.0
 
             done = False
 
@@ -539,7 +568,7 @@ class DroneSwarmEnv(gym.Env):
         capture=close_drones >= 2
 
         if capture:
-            rewards = [r + 30.0 for r in rewards]
+            rewards = [r + 150.0 for r in rewards]
             dones = [True] * self.num_drones
 
 
@@ -740,10 +769,10 @@ class DroneSwarmEnv(gym.Env):
 
         global_reward = 0.0
 
-        # global_reward += (
-        #     self.angular_reward_scale
-        #     * coverage_reward
-        # )
+        global_reward += (
+            self.angular_reward_scale
+            * coverage_reward
+        )
 
         # global_reward += (
         #     self.intercept_reward_scale
@@ -775,20 +804,23 @@ class DroneSwarmEnv(gym.Env):
             )
 
             all_distances.append(d)
+        current_team_distance = np.mean(all_distances)
+        team_progress = (
+            self.prev_team_distance
+            - current_team_distance
+        )
 
-        team_distance = np.mean(all_distances)
-        if team_distance > 12:
-            rewards = [r - 20.0 for r in rewards]
-        
-        if team_distance > 15:
-            dones = [True] * self.num_drones
-
-        team_reward = 8.0 / (team_distance + 1.0)
-
+        team_reward = 15.0 * team_progress
         rewards = [
             r + team_reward
             for r in rewards
         ]
+        self.prev_team_distance = current_team_distance
+        team_distance = np.mean(all_distances)
+        
+        if team_distance > 15:
+            dones = [True] * self.num_drones
+
         mean_distance = np.mean(all_distances)
 
         min_distance = np.min(all_distances)
@@ -820,7 +852,10 @@ class DroneSwarmEnv(gym.Env):
         # self.debug_stats["velocity_diversity"].append(
         #     velocity_diversity
         # )
-
+        rewards = [
+            np.clip(r, -20.0, 20.0)
+            for r in rewards
+        ]
         return (
             next_obs,
             rewards,
@@ -900,6 +935,13 @@ class DroneSwarmEnv(gym.Env):
                 rel_pos = other_pos - pos
 
                 obs.extend(rel_pos)
+                other_vel, _ = p.getBaseVelocity(other_drone)
+
+                other_vel = np.array(other_vel[:2])
+
+                rel_vel = other_vel - vel
+
+                obs.extend(rel_vel)
 
             obs_all.append(
                 np.array(obs, dtype=np.float32)
