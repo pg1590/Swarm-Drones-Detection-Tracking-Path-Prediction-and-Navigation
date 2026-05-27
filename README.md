@@ -203,36 +203,6 @@ Relevant concepts include:
 
 ---
 
-# Demo
-
-## Training Demo
-Add GIF/video here
-
-## Formation Demo
-Add GIF/video here
-
-## Swarm Tracking Demo
-Add GIF/video here
-
----
-
-# Repository Structure
-
-```text
-├── envs/
-├── agents/
-├── training/
-├── rewards/
-├── formations/
-├── configs/
-├── utils/
-├── models/
-├── videos/
-└── README.md
-```
-
----
-
 # Author
 
 Prakhar Gupta  
