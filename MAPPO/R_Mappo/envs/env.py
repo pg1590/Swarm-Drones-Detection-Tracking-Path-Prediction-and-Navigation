@@ -765,7 +765,15 @@ class DroneSwarmEnv(gym.Env):
         #             diversity_reward += (
         #                 1.0 - cosine
         #             )
+        all_distances = []
 
+        for pos in positions:
+
+            d = np.linalg.norm(
+                pos - self.target_pos
+            )
+
+            all_distances.append(d)
         global_reward = 0.0
 
         team_mean_distance = np.mean(all_distances)
@@ -797,15 +805,7 @@ class DroneSwarmEnv(gym.Env):
             for r in rewards
         ]
         next_obs = self._get_obs()
-        all_distances = []
-
-        for pos in positions:
-
-            d = np.linalg.norm(
-                pos - self.target_pos
-            )
-
-            all_distances.append(d)
+       
         current_team_distance = np.mean(all_distances)
         team_progress = (
             self.prev_team_distance
