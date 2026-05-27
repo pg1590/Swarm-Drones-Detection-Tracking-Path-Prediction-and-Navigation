@@ -117,6 +117,32 @@ class DroneSwarmEnv(gym.Env):
             np.random.uniform(-4, 4)
         ])
 
+        # =====================================================
+        # TARGET VISUAL OBJECT
+        # =====================================================
+
+        visual_shape = p.createVisualShape(
+            shapeType=p.GEOM_SPHERE,
+            radius=0.25,
+            rgbaColor=[1, 0.1, 0.1, 1]
+        )
+
+        collision_shape = p.createCollisionShape(
+            shapeType=p.GEOM_SPHERE,
+            radius=0.25
+        )
+
+        self.target_body = p.createMultiBody(
+            baseMass=0,
+            baseCollisionShapeIndex=collision_shape,
+            baseVisualShapeIndex=visual_shape,
+            basePosition=[
+                self.target_pos[0],
+                self.target_pos[1],
+                0.25
+            ]
+        )
+
         self.target_velocity = np.array([0.0, 0.0])
 
         self.target_speed = 0.0
@@ -142,6 +168,12 @@ class DroneSwarmEnv(gym.Env):
                 "sphere2.urdf",
                 start_pos,
                 globalScaling=0.2
+            )
+
+            p.changeVisualShape(
+                drone,
+                -1,
+                rgbaColor=[0.1, 0.4, 1, 1]
             )
 
             self.drones.append(drone)
@@ -237,6 +269,47 @@ class DroneSwarmEnv(gym.Env):
         # ============================================
 
         self.target_pos += self.target_velocity
+
+        # update pybullet target body position
+        p.resetBasePositionAndOrientation(
+            self.target_body,
+            [
+                self.target_pos[0],
+                self.target_pos[1],
+                0.25
+            ],
+            [0, 0, 0, 1]
+        )
+
+        p.addUserDebugLine(
+            [
+                self.target_pos[0] - 1.0,
+                self.target_pos[1],
+                0.02
+            ],
+            [
+                self.target_pos[0] + 1.0,
+                self.target_pos[1],
+                0.02
+            ],
+            [1, 0, 0],
+            lifeTime=0.05
+        )
+
+        p.addUserDebugLine(
+            [
+                self.target_pos[0],
+                self.target_pos[1] - 1.0,
+                0.02
+            ],
+            [
+                self.target_pos[0],
+                self.target_pos[1] + 1.0,
+                0.02
+            ],
+            [1, 0, 0],
+            lifeTime=0.05
+        )
 
         # boundary reflection
         for k in range(2):
