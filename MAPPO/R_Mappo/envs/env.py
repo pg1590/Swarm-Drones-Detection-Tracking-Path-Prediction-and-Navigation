@@ -24,7 +24,7 @@ class DroneSwarmEnv(gym.Env):
 
         self.gui = gui
 
-        self.angular_reward_scale = 1.5
+        self.angular_reward_scale = 4.0
         self.intercept_reward_scale = 3.0
         self.escape_block_reward_scale = 2.5
         self.parallel_penalty_scale = 0.3
@@ -388,7 +388,6 @@ class DroneSwarmEnv(gym.Env):
                 target_motion_dir
             )
             # reward += 1.5 * pursuit_alignment
-            reward += 0.5 * velocity_match
             # reward += -0.15 * np.linalg.norm(to_target)
             norm = np.linalg.norm(to_target)
 
@@ -565,7 +564,7 @@ class DroneSwarmEnv(gym.Env):
         for k in range(len(rewards)):
             rewards[k] += 5.0 * team_close
 
-        capture=close_drones >= 2
+        capture=close_drones >= 3
 
         if capture:
             rewards = [r + 150.0 for r in rewards]
@@ -769,10 +768,13 @@ class DroneSwarmEnv(gym.Env):
 
         global_reward = 0.0
 
-        global_reward += (
-            self.angular_reward_scale
-            * coverage_reward
-        )
+        team_mean_distance = np.mean(all_distances)
+
+        if team_mean_distance < 4.0:
+            global_reward += (
+                self.angular_reward_scale
+                * coverage_reward
+            )
 
         # global_reward += (
         #     self.intercept_reward_scale
