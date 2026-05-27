@@ -117,11 +117,9 @@ class DroneSwarmEnv(gym.Env):
             np.random.uniform(-4, 4)
         ])
 
-        self.target_velocity = np.array([
-            np.random.uniform(-0.05, 0.05),
-            np.random.uniform(-0.05, 0.05)
-        ])
-        self.target_speed = 0.12
+        self.target_velocity = np.array([0.0, 0.0])
+
+        self.target_speed = 0.0
         # =====================================================
         # DRONES
         # =====================================================
@@ -234,53 +232,9 @@ class DroneSwarmEnv(gym.Env):
 
         p.stepSimulation()
 
-        # =====================================================
-        # EVASIVE TARGET POLICY
-        # =====================================================
-
-        drone_positions_temp = []
-
-        for drone in self.drones:
-
-            pos, _ = p.getBasePositionAndOrientation(drone)
-
-            drone_positions_temp.append(
-                np.array(pos[:2])
-            )
-
-        swarm_center = np.mean(
-            np.array(drone_positions_temp),
-            axis=0
-        )
-
-        escape_vec = (
-            self.target_pos - swarm_center
-        )
-
-        escape_norm = np.linalg.norm(
-            escape_vec
-        )
-
-        if escape_norm > 1e-5:
-
-            escape_vec /= escape_norm
-
-        noise = np.random.randn(2) * 0.05
-
-        target_motion = (
-            0.85 * escape_vec
-            + 0.15 * noise
-        )
-
-        target_motion /= (
-            np.linalg.norm(target_motion)
-            + 1e-8
-        )
-
-        self.target_velocity = (
-            target_motion
-            * self.target_speed
-        )
+        # ============================================
+        # FIXED TARGET (STAGE 1 RECURRENT TRAINING)
+        # ============================================
 
         self.target_pos += self.target_velocity
 
@@ -567,7 +521,7 @@ class DroneSwarmEnv(gym.Env):
         capture=close_drones >= 3
 
         if capture:
-            rewards = [r + 150.0 for r in rewards]
+            rewards = [r + 40.0 for r in rewards]
             dones = [True] * self.num_drones
 
 
@@ -627,6 +581,8 @@ class DroneSwarmEnv(gym.Env):
             (2 * np.pi - largest_gap)
             / (2 * np.pi)
         )
+
+        escape_gap_penalty = largest_gap / (2 * np.pi)
         
         # # ---------------------------------
         # # INTERCEPTION REWARD
@@ -779,9 +735,14 @@ class DroneSwarmEnv(gym.Env):
         team_mean_distance = np.mean(all_distances)
 
         if team_mean_distance < 4.0:
+
             global_reward += (
                 self.angular_reward_scale
                 * coverage_reward
+            )
+
+            global_reward -= (
+                2.0 * escape_gap_penalty
             )
 
         # global_reward += (
@@ -820,7 +781,7 @@ class DroneSwarmEnv(gym.Env):
         self.prev_team_distance = current_team_distance
         team_distance = np.mean(all_distances)
         
-        if team_distance > 15:
+        if team_distance > 10:
             dones = [True] * self.num_drones
 
         mean_distance = np.mean(all_distances)

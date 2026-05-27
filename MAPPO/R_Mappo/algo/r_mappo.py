@@ -163,14 +163,58 @@ class R_MAPPO:
         # RESHAPE FOR GRU
         # =====================================================
 
-        obs = obs.unsqueeze(0)
-        states = states.unsqueeze(0)
-        actions = actions.unsqueeze(0)
+        seq_len = 16
 
-        old_log_probs = old_log_probs.unsqueeze(0)
+        num_steps = obs.shape[0]
 
-        returns = returns.unsqueeze(0)
-        advantages = advantages.unsqueeze(0)
+        usable_steps = (num_steps // seq_len) * seq_len
+
+        obs = obs[:usable_steps]
+        states = states[:usable_steps]
+        actions = actions[:usable_steps]
+
+        old_log_probs = old_log_probs[:usable_steps]
+
+        returns = returns[:usable_steps]
+        advantages = advantages[:usable_steps]
+
+        actor_hidden_states = actor_hidden_states[:, :usable_steps, :]
+        critic_hidden_states = critic_hidden_states[:, :usable_steps, :]
+
+        num_sequences = usable_steps // seq_len
+
+        obs = obs.view(
+            num_sequences,
+            seq_len,
+            -1
+        )
+
+        states = states.view(
+            num_sequences,
+            seq_len,
+            -1
+        )
+
+        actions = actions.view(
+            num_sequences,
+            seq_len,
+            -1
+        )
+
+        old_log_probs = old_log_probs.view(
+            num_sequences,
+            seq_len
+        )
+
+        returns = returns.view(
+            num_sequences,
+            seq_len
+        )
+
+        advantages = advantages.view(
+            num_sequences,
+            seq_len
+        )
 
         # =====================================================
         # PPO EPOCHS
@@ -182,9 +226,13 @@ class R_MAPPO:
             # ACTOR FORWARD
             # =================================================
 
+            initial_actor_hidden = actor_hidden_states[
+                :, ::seq_len, :
+            ].permute(0, 1, 2)
+
             dist, _ = self.actor(
                 obs,
-                actor_hidden_states[:, 0:1, :].contiguous()
+                initial_actor_hidden.contiguous()
             )
 
             new_log_probs = dist.log_prob(actions)\
@@ -217,9 +265,13 @@ class R_MAPPO:
             # CRITIC FORWARD
             # =================================================
 
+            initial_critic_hidden = critic_hidden_states[
+                :, ::seq_len, :
+            ].permute(0, 1, 2)
+
             values_pred, _ = self.critic(
                 states,
-                critic_hidden_states[:, 0:1, :]
+                initial_critic_hidden.contiguous()
             )
 
             values_pred = values_pred.squeeze(-1)

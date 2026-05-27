@@ -250,9 +250,11 @@ def main():
                         last_value
                     )
 
-                    agent.update(
-                        buffers[drone_idx]
-                    )
+                    if len(buffers[drone_idx].obs) >= 64:
+
+                        agent.update(
+                            buffers[drone_idx]
+                        )
 
                     buffers[drone_idx].clear()
 
@@ -285,6 +287,12 @@ def main():
         print(
             f"Episode: {episode} | "
             f"Reward: {episode_reward:.2f}"
+        )
+
+        print(
+            f"Coverage: {env.debug_stats['coverage'][-1]:.3f} | "
+            f"EscapeGap: {env.debug_stats['escape_gap'][-1]:.3f} | "
+            f"MeanDist: {env.debug_stats['mean_distance'][-1]:.3f}"
         )
 
         # ====================================================

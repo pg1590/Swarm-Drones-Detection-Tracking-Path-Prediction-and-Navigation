@@ -31,6 +31,8 @@ class RecurrentActor(nn.Module):
         # Feature extractor
         self.fc1 = nn.Linear(obs_dim, hidden_dim)
 
+        self.norm1 = nn.LayerNorm(hidden_dim)
+
         # GRU memory
         self.gru = nn.GRU(
             input_size=hidden_dim,
@@ -56,7 +58,11 @@ class RecurrentActor(nn.Module):
             (1, batch, hidden_dim)
         """
 
-        x = F.relu(self.fc1(obs))
+        x = F.relu(
+            self.norm1(
+                self.fc1(obs)
+            )
+        )
 
         x, next_hidden = self.gru(x, hidden_state)
 
@@ -96,6 +102,8 @@ class RecurrentCritic(nn.Module):
         # State encoder
         self.fc1 = nn.Linear(state_dim, hidden_dim)
 
+        self.norm1 = nn.LayerNorm(hidden_dim)
+
         # GRU memory
         self.gru = nn.GRU(
             input_size=hidden_dim,
@@ -116,7 +124,11 @@ class RecurrentCritic(nn.Module):
             (1, batch, hidden_dim)
         """
 
-        x = F.relu(self.fc1(state))
+        x = F.relu(
+            self.norm1(
+                self.fc1(state)
+            )
+        )
 
         x, next_hidden = self.gru(x, hidden_state)
 

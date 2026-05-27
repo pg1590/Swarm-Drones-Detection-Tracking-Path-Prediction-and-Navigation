@@ -4,9 +4,9 @@
 
 NUM_DRONES = 3
 
-MAX_EPISODES = 3000
+MAX_EPISODES = 10000
 
-MAX_STEPS = 500
+MAX_STEPS = 128
 
 GUI = False
 
@@ -37,7 +37,7 @@ LR_CRITIC = 1e-4
 # PPO COEFFICIENTS
 # ============================================================
 
-ENTROPY_COEF = 0.02
+ENTROPY_COEF = 0.01
 
 VALUE_COEF = 0.5
 
@@ -46,19 +46,20 @@ VALUE_COEF = 0.5
 # GRU
 # ============================================================
 
-HIDDEN_DIM = 128
+HIDDEN_DIM = 64
 
 
 # ============================================================
 # TRAINING
 # ============================================================
 
-UPDATE_TIMESTEPS = 512
+UPDATE_TIMESTEPS = 1024
 
 SAVE_INTERVAL = 50
 
 SEED = 42
 
+SEQUENCE_LENGTH = 16
 
 # ============================================================
 # PATHS

@@ -149,15 +149,15 @@ class RolloutBuffer:
             dtype=torch.float32
         ).to(device)
 
-        actor_hidden_states = torch.cat(
+        actor_hidden_states = torch.stack(
             self.actor_hidden_states,
             dim=1
-        ).to(device)
+        ).squeeze(2).to(device)
 
-        critic_hidden_states = torch.cat(
+        critic_hidden_states = torch.stack(
             self.critic_hidden_states,
             dim=1
-        ).to(device)
+        ).squeeze(2).to(device)
 
         return (
             obs,
