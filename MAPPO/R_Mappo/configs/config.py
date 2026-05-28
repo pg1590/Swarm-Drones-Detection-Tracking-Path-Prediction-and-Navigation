@@ -4,7 +4,7 @@
 
 NUM_DRONES = 3
 
-MAX_EPISODES = 10000
+MAX_EPISODES = 2000
 
 MAX_STEPS = 128
 
@@ -37,7 +37,7 @@ LR_CRITIC = 1e-4
 # PPO COEFFICIENTS
 # ============================================================
 
-ENTROPY_COEF = 0.01
+ENTROPY_COEF = 0.02
 
 VALUE_COEF = 0.5
 
