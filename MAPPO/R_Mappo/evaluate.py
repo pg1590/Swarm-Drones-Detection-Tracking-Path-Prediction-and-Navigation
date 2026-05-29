@@ -90,8 +90,6 @@ def main():
     # ========================================================
     # EVALUATION LOOP
     # ========================================================
-    capture_threshold = CAPTURE_RADIUS
-
     successful_captures = 0
 
     for episode in range(EVAL_EPISODES):
@@ -160,7 +158,7 @@ def main():
             # ENV STEP
             # ================================================
 
-            next_obs, rewards, dones, _ = env.step(
+            next_obs, rewards, dones, info = env.step(
                 actions
             )
 
@@ -190,10 +188,7 @@ def main():
 
             min_distance = np.min(distances_to_target)
 
-            if (
-                min_distance < capture_threshold
-                and not episode_captured
-            ):
+            if info.get("capture", False) and not episode_captured:
 
                 successful_captures += 1
                 episode_captured = True

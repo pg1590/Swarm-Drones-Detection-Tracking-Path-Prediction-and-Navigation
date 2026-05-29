@@ -22,6 +22,7 @@ from plots.trajectory_plotter import (
     plot_mean_distance,
     plot_coverage,
     plot_escape_gap,
+    plot_metric,
     plot_velocity_diversity
 )
 
@@ -101,6 +102,7 @@ def main():
     # ========================================================
 
     episode_rewards = []
+    episode_captures = []
 
     best_reward = -1e9
 
@@ -117,6 +119,7 @@ def main():
         state = env.get_global_state()
 
         episode_reward = 0
+        episode_capture = False
 
         # ====================================================
         # GRU HIDDEN STATES
@@ -183,7 +186,7 @@ def main():
             # ENV STEP
             # ================================================
 
-            next_obs, rewards, dones, _ = env.step(
+            next_obs, rewards, dones, info = env.step(
                 actions
             )
 
@@ -194,6 +197,9 @@ def main():
             done = any(dones)
 
             episode_reward += reward
+
+            if info.get("capture", False):
+                episode_capture = True
 
             # ================================================
             # STORE IN BUFFER
@@ -294,6 +300,7 @@ def main():
         # ====================================================
 
         episode_rewards.append(episode_reward)
+        episode_captures.append(int(episode_capture))
 
         print(
             f"Episode: {episode} | "
@@ -303,6 +310,7 @@ def main():
         print(
             f"Coverage: {env.debug_stats['coverage'][-1]:.3f} | "
             f"EscapeGap: {env.debug_stats['escape_gap'][-1]:.3f} | "
+            f"GapExcess: {env.debug_stats['gap_excess'][-1]:.3f} | "
             f"MeanDist: {env.debug_stats['mean_distance'][-1]:.3f}"
         )
 
@@ -356,7 +364,7 @@ def main():
             )
 
             plot_capture_rate(
-                env.debug_stats["capture_rate"],
+                episode_captures,
                 save_path="plots/capture_rate.png"
             )
 
@@ -373,6 +381,27 @@ def main():
             plot_escape_gap(
                 env.debug_stats["escape_gap"],
                 save_path="plots/escape_gap.png"
+            )
+
+            plot_metric(
+                env.debug_stats["gap_excess"],
+                title="Escape Gap Excess",
+                ylabel="Gap Excess (rad)",
+                save_path="plots/gap_excess.png"
+            )
+
+            plot_metric(
+                env.debug_stats["helper_support_error"],
+                title="Helper Support Error",
+                ylabel="Distance Error",
+                save_path="plots/helper_support_error.png"
+            )
+
+            plot_metric(
+                env.debug_stats["helper_ring_error"],
+                title="Helper Ring Error",
+                ylabel="Radius Error",
+                save_path="plots/helper_ring_error.png"
             )
 
             plot_velocity_diversity(

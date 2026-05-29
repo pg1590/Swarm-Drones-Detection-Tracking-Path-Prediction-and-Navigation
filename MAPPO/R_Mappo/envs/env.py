@@ -39,11 +39,15 @@ class DroneSwarmEnv(gym.Env):
         self.team_progress_scale = 3.0
         self.closest_bonus_scale = 1.2
         self.coverage_scale = 2.0
-        self.helper_support_scale = 2.5
-        self.helper_ring_scale = 1.5
+        self.helper_support_scale = 3.0
+        self.helper_ring_scale = 2.0
+        self.helper_angle_scale = 2.0
         self.helper_alignment_scale = 0.4
         self.support_radius = 1.5
         self.support_angle = 2.0 * np.pi / 3.0
+        self.escape_gap_target = 4.5
+        self.helper_gap_penalty_scale = 3.0
+        self.pursuer_gap_penalty_scale = 0.5
         self.capture_reward = 100.0
         self.capture_agent_bonus = 30.0
         self.max_shaping_reward = 30.0
@@ -54,6 +58,9 @@ class DroneSwarmEnv(gym.Env):
             "min_distance": [],
             "coverage": [],
             "escape_gap": [],
+            "gap_excess": [],
+            "helper_support_error": [],
+            "helper_ring_error": [],
             "velocity_diversity": [],
         }
 
@@ -242,7 +249,11 @@ class DroneSwarmEnv(gym.Env):
             next_obs,
             rewards,
             dones,
-            {}
+            {
+                "capture": bool(capture),
+                "min_distance": float(np.min(distances)),
+                "mean_distance": float(np.mean(distances)),
+            }
         )
 
     def _update_target(self):
@@ -321,6 +332,7 @@ class DroneSwarmEnv(gym.Env):
 
         coverage_reward, largest_gap = self._angular_coverage(positions)
         coverage_gate = np.clip((5.0 - mean_distance) / 3.0, 0.0, 1.0)
+        gap_excess = max(0.0, largest_gap - self.escape_gap_target)
         velocity_diversity = self._velocity_diversity(velocities)
         helper_targets = self._helper_support_assignments(
             positions,
@@ -328,6 +340,8 @@ class DroneSwarmEnv(gym.Env):
         )
 
         capture = min_distance < self.capture_radius
+        helper_support_errors = []
+        helper_ring_errors = []
 
         for i in range(self.num_drones):
             if i == closest_idx:
@@ -336,10 +350,18 @@ class DroneSwarmEnv(gym.Env):
                     self.pursuer_progress_scale
                     * individual_progress[i]
                 )
+                rewards[i] -= (
+                    self.pursuer_gap_penalty_scale
+                    * gap_excess
+                )
             else:
                 rewards[i] += (
                     self.helper_progress_scale
                     * individual_progress[i]
+                )
+                rewards[i] -= (
+                    self.helper_gap_penalty_scale
+                    * gap_excess
                 )
 
             rewards[i] += self.team_progress_scale * team_progress
@@ -366,11 +388,16 @@ class DroneSwarmEnv(gym.Env):
                     rewards[i] += 0.1 * alignment
 
             if i != closest_idx and i in helper_targets:
-                rewards[i] += self._helper_support_reward(
-                    positions[i],
-                    velocities[i],
-                    helper_targets[i]
-                )
+                support_reward, support_error, ring_error = \
+                    self._helper_support_reward(
+                        positions[i],
+                        velocities[i],
+                        helper_targets[i]
+                    )
+
+                rewards[i] += support_reward
+                helper_support_errors.append(support_error)
+                helper_ring_errors.append(ring_error)
 
             if speed < 0.05 and distances[i] > self.capture_radius:
                 rewards[i] -= 0.05
@@ -383,6 +410,17 @@ class DroneSwarmEnv(gym.Env):
         self.debug_stats["min_distance"].append(min_distance)
         self.debug_stats["coverage"].append(float(coverage_reward))
         self.debug_stats["escape_gap"].append(float(largest_gap))
+        self.debug_stats["gap_excess"].append(float(gap_excess))
+        self.debug_stats["helper_support_error"].append(
+            float(np.mean(helper_support_errors))
+            if len(helper_support_errors) > 0
+            else 0.0
+        )
+        self.debug_stats["helper_ring_error"].append(
+            float(np.mean(helper_ring_errors))
+            if len(helper_ring_errors) > 0
+            else 0.0
+        )
         self.debug_stats["velocity_diversity"].append(float(velocity_diversity))
 
         rewards = np.clip(
@@ -407,7 +445,7 @@ class DroneSwarmEnv(gym.Env):
         support_error = np.linalg.norm(position - support_target)
 
         support_score = np.exp(
-            -(support_error ** 2) / 2.0
+            -(support_error ** 2) / 1.0
         )
 
         distance_to_target = np.linalg.norm(
@@ -423,9 +461,22 @@ class DroneSwarmEnv(gym.Env):
             -(ring_error ** 2) / 0.5
         )
 
+        helper_rel = position - self.target_pos
+        support_rel = support_target - self.target_pos
+        helper_angle = np.arctan2(helper_rel[1], helper_rel[0])
+        support_angle = np.arctan2(support_rel[1], support_rel[0])
+        angular_error = abs(
+            self._wrap_angle(helper_angle - support_angle)
+        )
+
+        angle_score = np.exp(
+            -(angular_error ** 2) / 0.5
+        )
+
         reward = (
             self.helper_support_scale * support_score
             + self.helper_ring_scale * ring_score
+            + self.helper_angle_scale * angle_score
         )
 
         to_support = support_target - position
@@ -439,7 +490,11 @@ class DroneSwarmEnv(gym.Env):
                 np.dot(vel_dir, support_dir)
             )
 
-        return reward
+        return reward, float(support_error), float(ring_error)
+
+    def _wrap_angle(self, angle):
+
+        return (angle + np.pi) % (2 * np.pi) - np.pi
 
     def _helper_support_assignments(
         self,

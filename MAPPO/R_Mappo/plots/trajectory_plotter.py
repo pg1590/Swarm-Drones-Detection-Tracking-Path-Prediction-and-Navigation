@@ -199,9 +199,14 @@ def plot_trajectories(
             final_target[1],
             dx,
             dy,
-            width=0.05,
-            head_width=0.3,
-            linestyle='--'
+            width=0.025,
+            head_width=0.22,
+            color='crimson',
+            alpha=0.45,
+            linestyle='--',
+            length_includes_head=True,
+            label='Largest Escape Corridor',
+            zorder=1
         )
 
     # ========================================================
@@ -496,6 +501,37 @@ def plot_escape_gap(
     plt.xlabel("Episode")
 
     plt.ylabel("Angular Gap (rad)")
+
+    plt.grid(True)
+
+    if save_path is not None:
+
+        _ensure_save_dir(save_path)
+
+        plt.savefig(
+            save_path,
+            bbox_inches='tight'
+        )
+
+    plt.close()
+
+
+def plot_metric(
+    metric_history,
+    title,
+    ylabel,
+    save_path=None
+):
+
+    plt.figure(figsize=(10, 5))
+
+    plt.plot(metric_history)
+
+    plt.title(title)
+
+    plt.xlabel("Step")
+
+    plt.ylabel(ylabel)
 
     plt.grid(True)
 
