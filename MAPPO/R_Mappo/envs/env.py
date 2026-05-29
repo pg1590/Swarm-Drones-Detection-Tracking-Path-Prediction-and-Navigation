@@ -11,23 +11,37 @@ class DroneSwarmEnv(gym.Env):
         self,
         num_drones=3,
         gui=True,
-        max_steps=300
+        max_steps=300,
+        control_dt=1.0 / 30.0,
+        max_speed=2.0,
+        velocity_response=0.35,
+        capture_radius=0.8,
+        safe_spacing=0.45
     ):
 
         super(DroneSwarmEnv, self).__init__()
 
         self.num_drones = num_drones
-
         self.max_steps = max_steps
-
         self.current_step = 0
-
         self.gui = gui
 
-        self.angular_reward_scale = 4.0
-        self.intercept_reward_scale = 3.0
-        self.escape_block_reward_scale = 2.5
-        self.parallel_penalty_scale = 0.3
+        self.control_dt = control_dt
+        self.max_speed = max_speed
+        self.velocity_response = velocity_response
+        self.capture_radius = capture_radius
+        self.safe_spacing = safe_spacing
+
+        # Reward scales for Stage 1: homogeneous agents with emergent roles.
+        self.pursuer_progress_scale = 8.0
+        self.helper_progress_scale = 2.0
+        self.team_progress_scale = 10.0
+        self.closest_bonus_scale = 1.2
+        self.coverage_scale = 4.0
+        self.capture_reward = 60.0
+        self.capture_agent_bonus = 20.0
+        self.max_reward = 30.0
+
         self.debug_stats = {
             "capture_rate": [],
             "mean_distance": [],
@@ -36,50 +50,32 @@ class DroneSwarmEnv(gym.Env):
             "escape_gap": [],
             "velocity_diversity": [],
         }
-        # =====================================================
-        # PYBULLET
-        # =====================================================
 
         if gui:
             self.client = p.connect(p.GUI)
         else:
             self.client = p.connect(p.DIRECT)
 
-        p.setAdditionalSearchPath(
-            pybullet_data.getDataPath()
-        )
-
+        p.setAdditionalSearchPath(pybullet_data.getDataPath())
         p.setGravity(0, 0, -9.8)
+        p.setTimeStep(self.control_dt)
 
-        # =====================================================
-        # ACTION SPACE
-        # =====================================================
-
-        # vx, vy
+        # vx, vy command in normalized units. Magnitude is meaningful.
         self.action_space = spaces.Box(
-            low=-1,
-            high=1,
+            low=-1.0,
+            high=1.0,
             shape=(2,),
             dtype=np.float32
         )
 
-        # =====================================================
-        # OBSERVATION SPACE
-        # =====================================================
-
-        # own pos (2)
-        # own vel (2)
-        # target relative pos (2)
-        # neighbors relative pos (2*num_neighbors)
-
         obs_dim = (
-            2      # own pos
-            + 2    # own vel
-            + 2    # relative target pos
+            2      # own position
+            + 2    # own velocity
+            + 2    # relative target position
             + 2    # target velocity
-            + 2    # future target relative pos
+            + 2    # future target relative position
             + (self.num_drones - 1) * 4
-        )       
+        )
 
         self.observation_space = spaces.Box(
             low=-np.inf,
@@ -88,38 +84,22 @@ class DroneSwarmEnv(gym.Env):
             dtype=np.float32
         )
 
-        # =====================================================
-        # LOAD ENVIRONMENT
-        # =====================================================
-
         self.reset()
-
-    # =========================================================
-    # RESET
-    # =========================================================
 
     def reset(self):
 
         p.resetSimulation()
-
+        p.setAdditionalSearchPath(pybullet_data.getDataPath())
         p.setGravity(0, 0, -9.8)
-
+        p.setTimeStep(self.control_dt)
         p.loadURDF("plane.urdf")
 
         self.current_step = 0
 
-        # =====================================================
-        # TARGET
-        # =====================================================
-
         self.target_pos = np.array([
             np.random.uniform(-4, 4),
             np.random.uniform(-4, 4)
-        ])
-
-        # =====================================================
-        # TARGET VISUAL OBJECT
-        # =====================================================
+        ], dtype=np.float32)
 
         visual_shape = p.createVisualShape(
             shapeType=p.GEOM_SPHERE,
@@ -143,26 +123,15 @@ class DroneSwarmEnv(gym.Env):
             ]
         )
 
-        self.target_speed = 0.12
-
-        target_angle = np.random.uniform(0, 2 * np.pi)
-
-        self.target_velocity = np.array([
-            np.cos(target_angle),
-            np.sin(target_angle)
-        ]) * self.target_speed
-        # =====================================================
-        # DRONES
-        # =====================================================
+        # Stage 1 target is stationary. Keep velocity in the state so the same
+        # observation contract can support moving-target curriculum later.
+        self.target_speed = 0.0
+        self.target_velocity = np.array([0.0, 0.0], dtype=np.float32)
 
         self.drones = []
+        self.prev_distances = np.zeros(self.num_drones, dtype=np.float32)
 
-        self.drone_positions = []
-        self.prev_distances = np.zeros(self.num_drones)
-        self.drone_velocities = []
-
-        for i in range(self.num_drones):
-
+        for _ in range(self.num_drones):
             start_pos = [
                 np.random.uniform(-2, 2),
                 np.random.uniform(-2, 2),
@@ -183,148 +152,101 @@ class DroneSwarmEnv(gym.Env):
 
             self.drones.append(drone)
 
-        for i, drone in enumerate(self.drones):
-            pos, _ = p.getBasePositionAndOrientation(drone)
-            pos = np.array(pos[:2])
+        positions, _ = self._read_drone_states()
+        distances = self._distances_to_target(positions)
 
-            self.prev_distances[i] = np.linalg.norm(
-                pos - self.target_pos
-            )
-
-        all_distances = []
-
-        for drone in self.drones:
-
-            pos, _ = p.getBasePositionAndOrientation(drone)
-
-            pos = np.array(pos[:2])
-
-            d = np.linalg.norm(
-                pos - self.target_pos
-            )
-
-            all_distances.append(d)
-
-        self.prev_team_distance = np.mean(all_distances)
-        # =====================================================
-        # TRAJECTORY HISTORY
-        # =====================================================
+        self.prev_distances = distances.copy()
+        self.prev_team_distance = float(np.mean(distances))
 
         self.trajectory_history = []
         self.target_history = []
 
         return self._get_obs()
-    
-    # =========================================================
-    # STEP
-    # =========================================================
 
     def step(self, actions):
 
         self.current_step += 1
 
-        rewards = []
-
-        dones = []
-
-
-        positions = []
-
-        # =====================================================
-        # APPLY ACTIONS
-        # =====================================================
+        processed_actions = []
 
         for i, drone in enumerate(self.drones):
-
             action = np.array(actions[i], dtype=np.float32)
+            action = np.nan_to_num(action, nan=0.0, posinf=1.0, neginf=-1.0)
+            action = np.clip(action, -1.0, 1.0)
 
             action_norm = np.linalg.norm(action)
-
-            if action_norm > 1e-6:
+            if action_norm > 1.0:
                 action = action / action_norm
 
-            current_vel, ang_vel = p.getBaseVelocity(drone)
+            current_vel, _ = p.getBaseVelocity(drone)
+            current_vel = np.array(current_vel[:2], dtype=np.float32)
 
-            current_vel = np.array(current_vel[:2])
-
-            max_speed = 2.0
-
-            desired_vel = action * max_speed
-
+            desired_vel = action * self.max_speed
             new_vel = (
-                0.8 * current_vel
-                + 0.2 * desired_vel
+                (1.0 - self.velocity_response) * current_vel
+                + self.velocity_response * desired_vel
             )
 
-            # speed limit
             speed = np.linalg.norm(new_vel)
-
-            if speed > max_speed:
-                new_vel = (
-                    new_vel / speed
-                ) * max_speed
+            if speed > self.max_speed:
+                new_vel = (new_vel / speed) * self.max_speed
 
             p.resetBaseVelocity(
                 drone,
                 linearVelocity=[
-                    new_vel[0],
-                    new_vel[1],
-                    0
-                ]
+                    float(new_vel[0]),
+                    float(new_vel[1]),
+                    0.0
+                ],
+                angularVelocity=[0.0, 0.0, 0.0]
             )
+
+            processed_actions.append(action)
 
         p.stepSimulation()
 
-        # ============================================
-        # FIXED TARGET (STAGE 1 RECURRENT TRAINING)
-        # ============================================
+        self._update_target()
 
-        self.target_pos += self.target_velocity
+        positions, velocities = self._read_drone_states()
+        distances = self._distances_to_target(positions)
 
-        # update pybullet target body position
-        p.resetBasePositionAndOrientation(
-            self.target_body,
-            [
-                self.target_pos[0],
-                self.target_pos[1],
-                0.25
-            ],
-            [0, 0, 0, 1]
+        rewards, capture = self._compute_rewards(
+            positions,
+            velocities,
+            distances,
+            processed_actions
         )
 
-        p.addUserDebugLine(
-            [
-                self.target_pos[0] - 1.0,
-                self.target_pos[1],
-                0.02
-            ],
-            [
-                self.target_pos[0] + 1.0,
-                self.target_pos[1],
-                0.02
-            ],
-            [1, 0, 0],
-            lifeTime=0.05
+        dones = [False] * self.num_drones
+        if capture or self.current_step >= self.max_steps:
+            dones = [True] * self.num_drones
+
+        if float(np.mean(distances)) > 12.0:
+            dones = [True] * self.num_drones
+
+        self.prev_distances = distances.copy()
+        self.prev_team_distance = float(np.mean(distances))
+
+        self.trajectory_history.append(np.array(positions))
+        self.target_history.append(self.target_pos.copy())
+
+        next_obs = self._get_obs()
+
+        return (
+            next_obs,
+            rewards,
+            dones,
+            {}
         )
 
-        p.addUserDebugLine(
-            [
-                self.target_pos[0],
-                self.target_pos[1] - 1.0,
-                0.02
-            ],
-            [
-                self.target_pos[0],
-                self.target_pos[1] + 1.0,
-                0.02
-            ],
-            [1, 0, 0],
-            lifeTime=0.05
+    def _update_target(self):
+
+        self.target_pos = (
+            self.target_pos
+            + self.target_velocity * self.control_dt
         )
 
-        # boundary reflection
         for k in range(2):
-
             if self.target_pos[k] > 8:
                 self.target_pos[k] = 8
                 self.target_velocity[k] *= -1
@@ -333,712 +255,297 @@ class DroneSwarmEnv(gym.Env):
                 self.target_pos[k] = -8
                 self.target_velocity[k] *= -1
 
-        # =====================================================
-        # OBS + REWARD
-        # =====================================================
-        for i, drone in enumerate(self.drones):
+        p.resetBasePositionAndOrientation(
+            self.target_body,
+            [
+                float(self.target_pos[0]),
+                float(self.target_pos[1]),
+                0.25
+            ],
+            [0, 0, 0, 1]
+        )
 
-            pos, _ = p.getBasePositionAndOrientation(drone)
-
-            vel, _ = p.getBaseVelocity(drone)
-
-            pos = np.array(pos[:2])
-            vel = np.array(vel[:2])
-
-            positions.append(pos)
-
-            # =================================================
-            # TARGET DISTANCE
-            # =================================================
-
-            target_vel = np.array(
-                self.target_velocity[:2]
+        if self.gui:
+            p.addUserDebugLine(
+                [
+                    self.target_pos[0] - 1.0,
+                    self.target_pos[1],
+                    0.02
+                ],
+                [
+                    self.target_pos[0] + 1.0,
+                    self.target_pos[1],
+                    0.02
+                ],
+                [1, 0, 0],
+                lifeTime=0.05
             )
 
-            future_target = (
-                self.target_pos
-                + 3.0 * target_vel
+            p.addUserDebugLine(
+                [
+                    self.target_pos[0],
+                    self.target_pos[1] - 1.0,
+                    0.02
+                ],
+                [
+                    self.target_pos[0],
+                    self.target_pos[1] + 1.0,
+                    0.02
+                ],
+                [1, 0, 0],
+                lifeTime=0.05
             )
 
-            current_distance = np.linalg.norm(
-                pos - self.target_pos
+    def _compute_rewards(
+        self,
+        positions,
+        velocities,
+        distances,
+        actions
+    ):
+
+        rewards = np.full(self.num_drones, -0.01, dtype=np.float32)
+
+        closest_idx = int(np.argmin(distances))
+        min_distance = float(distances[closest_idx])
+        mean_distance = float(np.mean(distances))
+
+        individual_progress = self.prev_distances - distances
+        team_progress = self.prev_team_distance - mean_distance
+
+        coverage_reward, largest_gap = self._angular_coverage(positions)
+        coverage_gate = np.clip((5.0 - mean_distance) / 3.0, 0.0, 1.0)
+        velocity_diversity = self._velocity_diversity(velocities)
+
+        capture = min_distance < self.capture_radius
+
+        for i in range(self.num_drones):
+            progress_scale = self.helper_progress_scale
+            if i == closest_idx:
+                progress_scale = self.pursuer_progress_scale
+                rewards[i] += self.closest_bonus_scale / (distances[i] + 0.5)
+
+            rewards[i] += progress_scale * individual_progress[i]
+            rewards[i] += self.team_progress_scale * team_progress
+            rewards[i] += 0.8 / (mean_distance + 1.0)
+
+            rewards[i] += (
+                self.coverage_scale
+                * coverage_gate
+                * self._coverage_contribution(positions, i, coverage_reward)
             )
 
-            future_distance = np.linalg.norm(
-                pos - future_target
-            )
-
-            target_distance = (
-                0.7 * current_distance
-                + 0.3 * future_distance
-            )
-
-            previous_distance = self.prev_distances[i]
-
-            # =====================================
-            # PROGRESS REWARD
-            # =====================================
-
-            progress_reward = (
-                previous_distance
-                - current_distance
-            )
-
-            reward = 8.0 * progress_reward
-            reward -= 0.3 * current_distance
-
-            if current_distance < previous_distance:
-                reward += 0.1
-
-            # =====================================
-            # TIME PENALTY
-            # =====================================
-
-            reward -= 0.01
-
-            # =====================================
-        
-            # VELOCITY ALIGNMENT
-            # =====================================
-
-            to_target = self.target_pos - pos
-            target_vel = self.target_velocity
-            
-            direction_to_target = to_target / (
-                np.linalg.norm(to_target) + 1e-6
-            )
-
-            target_motion_dir = target_vel / (
-                np.linalg.norm(target_vel) + 1e-6
-            )
-
-            # pursuit_alignment = np.dot(
-            #     action,
-            #     direction_to_target
-            # )
-            vel_norm = np.linalg.norm(vel)
-            vel_dir = np.zeros(2)
-
-            if vel_norm > 1e-6:
-                vel_dir = vel / vel_norm
-
-                pursuit_alignment = np.dot(
-                    vel_dir,
-                    direction_to_target
-                )
-
-                reward += 1.0 * pursuit_alignment
-            velocity_match = np.dot(
-                vel_dir,
-                target_motion_dir
-            )
-            # reward += 1.5 * pursuit_alignment
-            # reward += -0.15 * np.linalg.norm(to_target)
-            norm = np.linalg.norm(to_target)
-
-            if norm > 1e-5:
-
-                to_target /= norm
-
-                vel_norm = np.linalg.norm(vel)
-
-                if vel_norm > 1e-5:
-
-                    vel_dir = vel / vel_norm
-
-                    alignment = np.dot(
-                        vel_dir,
-                        to_target
-                    )
-
-            # =================================================
-            # COLLISION PENALTY
-            # =================================================
-
-            for j, other_drone in enumerate(self.drones):
-
-                if i == j:
-                    continue
-
-                other_pos, _ = p.getBasePositionAndOrientation(
-                    other_drone
-                )
-
-                other_pos = np.array(other_pos[:2])
-
-                dist = np.linalg.norm(pos - other_pos)
-
-                if dist < 0.3:
-
-                    reward -= 5.0
-
-            # =================================================
-            # COHESION REWARD
-            # =================================================
-
-            # neighbor_distances = []
-
-            # for j, other_drone in enumerate(self.drones):
-
-            #     if i == j:
-            #         continue
-
-            #     other_pos, _ = p.getBasePositionAndOrientation(
-            #         other_drone
-            #     )
-
-            #     other_pos = np.array(other_pos[:2])
-
-            #     dist = np.linalg.norm(pos - other_pos)
-
-            #     neighbor_distances.append(dist)
-
-            # avg_neighbor_dist = np.mean(neighbor_distances)
-
-            # # desired swarm spacing
-            # if 1.0 < avg_neighbor_dist < 4.0:
-
-            #     reward += 1.0
-
-            # # =================================================
-            # # ENCIRCLEMENT REWARD
-            # # =================================================
-
-            # angles = []
-
-            # for j, other_drone in enumerate(self.drones):
-
-            #     if i == j:
-            #         continue
-
-            #     other_pos, _ = p.getBasePositionAndOrientation(
-            #         other_drone
-            #     )
-
-            #     other_pos = np.array(other_pos[:2])
-
-            #     vec = other_pos - self.target_pos
-
-            #     angle = np.arctan2(vec[1], vec[0])
-
-            #     angles.append(angle)
-
-            # if len(angles) >= 2:
-
-            #     angles = np.sort(angles)
-
-            #     angular_spread = angles[-1] - angles[0]
-
-            #     reward += 0.5 * angular_spread
-            
-
-            # =================================================
-            # ESCAPE CORRIDOR SUPPRESSION
-            # =================================================
-
-            all_angles = []
-
-            for drone_id in self.drones:
-
-                dpos, _ = p.getBasePositionAndOrientation(
-                    drone_id
-                )
-
-                dpos = np.array(dpos[:2])
-
-                vec = dpos - self.target_pos
-
-                angle = np.arctan2(vec[1], vec[0])
-
-                all_angles.append(angle)
-
-            all_angles = np.sort(all_angles)
-
-            largest_gap = 0
-
-            for k in range(len(all_angles) - 1):
-
-                gap = all_angles[k + 1] - all_angles[k]
-
-                largest_gap = max(largest_gap, gap)
-
-            # circular wraparound gap
-            wrap_gap = (
-                2 * np.pi
-                - all_angles[-1]
-                + all_angles[0]
-            )
-
-            largest_gap = max(largest_gap, wrap_gap)
-
-           
-
-
-            # =================================================
-            # TARGET BONUS
-            # =================================================
-
-            if target_distance < 1.0:
-
-                reward += 15.0
-
-            done = False
-
-            if self.current_step >= self.max_steps:
-
-                done = True
-
-            self.prev_distances[i] = current_distance
-
-    
-
-            dones.append(done)
-            # reward = np.clip(reward, -10.0, 10.0)
-            rewards.append(reward)
-
-        capture = False
-
-        close_drones = 0
-
-        for ppos in positions:
-
-            if np.linalg.norm(ppos - self.target_pos) < 1.0:
-                close_drones += 1
-
-        team_close = close_drones / self.num_drones
-        for k in range(len(rewards)):
-            rewards[k] += 5.0 * team_close
-
-        capture=close_drones >= 3
+            to_target = self.target_pos - positions[i]
+            to_target_norm = np.linalg.norm(to_target)
+            speed = np.linalg.norm(velocities[i])
+
+            if to_target_norm > 1e-6 and speed > 1e-6:
+                target_dir = to_target / to_target_norm
+                vel_dir = velocities[i] / speed
+                alignment = float(np.dot(vel_dir, target_dir))
+
+                if i == closest_idx:
+                    rewards[i] += 0.6 * alignment
+                else:
+                    rewards[i] += 0.2 * alignment
+
+            if speed < 0.05 and distances[i] > self.capture_radius:
+                rewards[i] -= 0.05
+
+            rewards[i] -= 0.02 * float(np.linalg.norm(actions[i]) ** 2)
+            rewards[i] -= self._spacing_penalty(positions, i)
 
         if capture:
-            rewards = [r + 40.0 for r in rewards]
-            dones = [True] * self.num_drones
+            rewards += self.capture_reward
+            rewards[closest_idx] += self.capture_agent_bonus
 
+        self.debug_stats["capture_rate"].append(int(capture))
+        self.debug_stats["mean_distance"].append(mean_distance)
+        self.debug_stats["min_distance"].append(min_distance)
+        self.debug_stats["coverage"].append(float(coverage_reward))
+        self.debug_stats["escape_gap"].append(float(largest_gap))
+        self.debug_stats["velocity_diversity"].append(float(velocity_diversity))
 
-        # =====================================
-        # TEAM SPREAD / ENCIRCLEMENT
-        # =====================================
-
-
-        # =====================================================
-        # STORE TRAJECTORIES
-        # =====================================================
-
-        self.trajectory_history.append(
-            np.array(positions)
-        )
-        self.target_history.append(
-            self.target_pos.copy()
+        rewards = np.clip(
+            rewards,
+            -self.max_reward,
+            self.max_reward
         )
 
-        # =====================================================
-        # GLOBAL SWARM REWARDS
-        # =====================================================
+        return [float(r) for r in rewards], capture
 
-        # ---------------------------------
-        # ANGULAR COVERAGE
-        # ---------------------------------
+    def _spacing_penalty(self, positions, drone_idx):
+
+        penalty = 0.0
+
+        for j, other_pos in enumerate(positions):
+            if drone_idx == j:
+                continue
+
+            dist = np.linalg.norm(positions[drone_idx] - other_pos)
+
+            if dist < self.safe_spacing:
+                penalty += 5.0 * (
+                    self.safe_spacing - dist
+                ) / self.safe_spacing
+
+        return penalty
+
+    def _angular_coverage(self, positions):
+
+        if len(positions) < 2:
+            return 0.0, 2 * np.pi
 
         angles = []
 
         for pos in positions:
-
-            dx = pos[0] - self.target_pos[0]
-            dy = pos[1] - self.target_pos[1]
-
-            angle = np.arctan2(dy, dx)
-
-            angles.append(angle)
+            rel = pos - self.target_pos
+            angles.append(np.arctan2(rel[1], rel[0]))
 
         angles = np.sort(np.array(angles))
+        largest_gap = self._largest_angular_gap(angles)
 
-        angular_gaps = []
+        coverage_reward = (
+            2 * np.pi - largest_gap
+        ) / (2 * np.pi)
+
+        return float(coverage_reward), float(largest_gap)
+
+    def _coverage_contribution(
+        self,
+        positions,
+        drone_idx,
+        team_coverage
+    ):
+
+        if len(positions) <= 2:
+            return team_coverage
+
+        reduced_positions = [
+            pos
+            for i, pos in enumerate(positions)
+            if i != drone_idx
+        ]
+
+        reduced_coverage, _ = self._angular_coverage(reduced_positions)
+
+        return max(0.0, team_coverage - reduced_coverage)
+
+    def _largest_angular_gap(self, angles):
+
+        largest_gap = 0.0
 
         for i in range(len(angles)):
-
             next_i = (i + 1) % len(angles)
-
             gap = angles[next_i] - angles[i]
 
             if gap < 0:
                 gap += 2 * np.pi
 
-            angular_gaps.append(gap)
+            largest_gap = max(largest_gap, gap)
 
-        largest_gap = max(angular_gaps)
+        return largest_gap
 
-        coverage_reward = (
-            (2 * np.pi - largest_gap)
-            / (2 * np.pi)
-        )
+    def _velocity_diversity(self, velocities):
 
-        escape_gap_penalty = largest_gap / (2 * np.pi)
-        
-        # # ---------------------------------
-        # # INTERCEPTION REWARD
-        # # ---------------------------------
+        if len(velocities) < 2:
+            return 0.0
 
-        # target_speed = np.linalg.norm(
-        #     self.target_velocity
-        # )
+        diversity = 0.0
+        pairs = 0
 
-        # intercept_reward = 0.0
+        for i in range(len(velocities)):
+            for j in range(i + 1, len(velocities)):
+                diversity += np.linalg.norm(velocities[i] - velocities[j])
+                pairs += 1
 
-        # future_target = (
-        #     self.target_pos
-        #     + 4.0 * self.target_velocity
-        # )
+        return diversity / max(pairs, 1)
 
-        # for pos in positions:
+    def _read_drone_states(self):
 
-        #     future_distance = np.linalg.norm(
-        #         pos - future_target
-        #     )
+        positions = []
+        velocities = []
 
-        #     intercept_reward += (
-        #         3.0 / (future_distance + 1.0)
-        #     )
+        for drone in self.drones:
+            pos, _ = p.getBasePositionAndOrientation(drone)
+            vel, _ = p.getBaseVelocity(drone)
 
-        # # ---------------------------------
-        # # PARALLEL CHASING PENALTY
-        # # ---------------------------------
+            positions.append(np.array(pos[:2], dtype=np.float32))
+            velocities.append(np.array(vel[:2], dtype=np.float32))
 
-        # parallel_penalty = 0.0
+        return positions, velocities
 
-        # velocities = []
+    def _distances_to_target(self, positions):
 
-        # for drone in self.drones:
-
-        #     vel, _ = p.getBaseVelocity(drone)
-
-        #     velocities.append(
-        #         np.array(vel[:2])
-        #     )
-
-        # for i in range(len(velocities)):
-
-        #     for j in range(i + 1, len(velocities)):
-
-        #         vi = velocities[i]
-        #         vj = velocities[j]
-
-        #         ni = np.linalg.norm(vi)
-        #         nj = np.linalg.norm(vj)
-
-        #         if ni > 1e-5 and nj > 1e-5:
-
-        #             cos_sim = (
-        #                 np.dot(vi, vj)
-        #                 / (ni * nj)
-        #             )
-
-        #             parallel_penalty += cos_sim
-
-
-        # # ---------------------------------
-        # # VELOCITY DIVERSITY
-        # # ---------------------------------
-
-        # velocity_diversity = 0.0
-
-        # for i in range(len(velocities)):
-
-        #     for j in range(i + 1, len(velocities)):
-
-        #         velocity_diversity += np.linalg.norm(
-        #             velocities[i] - velocities[j]
-        #         )
-
-        # # ---------------------------------
-        # # ESCAPE BLOCK REWARD
-        # # ---------------------------------
-        # escape_dir = -self.target_velocity
-
-        # escape_norm = np.linalg.norm(
-        #     escape_dir
-        # )
-
-        # escape_block_reward = 0.0
-
-        # if escape_norm > 1e-5:
-
-        #     escape_dir /= escape_norm
-
-        #     for pos in positions:
-
-        #         rel = pos - self.target_pos
-
-        #         rel_norm = np.linalg.norm(rel)
-
-        #         if rel_norm > 1e-5:
-
-        #             rel /= rel_norm
-
-        #             alignment = np.dot(
-        #                 rel,
-        #                 escape_dir
-        #             )
-
-        #             escape_block_reward += alignment
-
-        # ---------------------------------
-        # APPLY GLOBAL REWARDS
-        # ---------------------------------
-
-        # # ---------------------------------
-        # # ROLE DIVERSITY REWARD
-        # # ---------------------------------
-
-        # diversity_reward = 0.0
-
-        # for i in range(len(positions)):
-
-        #     for j in range(i + 1, len(positions)):
-
-        #         rel_i = positions[i] - self.target_pos
-        #         rel_j = positions[j] - self.target_pos
-
-        #         ni = np.linalg.norm(rel_i)
-        #         nj = np.linalg.norm(rel_j)
-
-        #         if ni > 1e-5 and nj > 1e-5:
-
-        #             rel_i /= ni
-        #             rel_j /= nj
-
-        #             cosine = np.dot(rel_i, rel_j)
-
-        #             diversity_reward += (
-        #                 1.0 - cosine
-        #             )
-        all_distances = []
-
-        for pos in positions:
-
-            d = np.linalg.norm(
-                pos - self.target_pos
-            )
-
-            all_distances.append(d)
-        global_reward = 0.0
-
-        team_mean_distance = np.mean(all_distances)
-
-        if team_mean_distance < 4.0:
-
-            global_reward += (
-                self.angular_reward_scale
-                * coverage_reward
-            )
-
-            global_reward -= (
-                2.0 * escape_gap_penalty
-            )
-
-        # global_reward += (
-        #     self.intercept_reward_scale
-        #     * intercept_reward
-        # )
-
-        # global_reward += (
-        #     self.escape_block_reward_scale
-        #     * escape_block_reward
-        # )
-
-        # global_reward -= (
-        #     self.parallel_penalty_scale
-        #     * parallel_penalty
-        # )
-        # global_reward+=spread_reward*0.3
-        # global_reward += 1.5 * diversity_reward
-        rewards = [
-            r + global_reward
-            for r in rewards
+        distances = [
+            np.linalg.norm(pos - self.target_pos)
+            for pos in positions
         ]
-        next_obs = self._get_obs()
-       
-        current_team_distance = np.mean(all_distances)
-        team_progress = (
-            self.prev_team_distance
-            - current_team_distance
-        )
 
-        team_reward = 15.0 * team_progress
-        rewards = [
-            r + team_reward
-            for r in rewards
-        ]
-        self.prev_team_distance = current_team_distance
-        team_distance = np.mean(all_distances)
-        
-        if team_distance > 10:
-            dones = [True] * self.num_drones
-
-        mean_distance = np.mean(all_distances)
-
-        min_distance = np.min(all_distances)
-
-        capture_flag = (
-            min_distance < 0.8
-        )
-
-        self.debug_stats["capture_rate"].append(
-            int(capture_flag)
-        )
-
-        self.debug_stats["mean_distance"].append(
-            mean_distance
-        )
-
-        self.debug_stats["min_distance"].append(
-            min_distance
-        )
-
-        self.debug_stats["coverage"].append(
-            coverage_reward
-        )
-
-        self.debug_stats["escape_gap"].append(
-            largest_gap
-        )
-
-        # self.debug_stats["velocity_diversity"].append(
-        #     velocity_diversity
-        # )
-        rewards = [
-            np.clip(r, -20.0, 20.0)
-            for r in rewards
-        ]
-        return (
-            next_obs,
-            rewards,
-            dones,
-            {}
-        )
-
-    # =========================================================
-    # OBSERVATIONS
-    # =========================================================
+        return np.array(distances, dtype=np.float32)
 
     def _get_obs(self):
 
         obs_all = []
 
         for i, drone in enumerate(self.drones):
-
             pos, _ = p.getBasePositionAndOrientation(drone)
-
             vel, _ = p.getBaseVelocity(drone)
 
-            pos = np.array(pos[:2])
-
-            vel = np.array(vel[:2])
+            pos = np.array(pos[:2], dtype=np.float32)
+            vel = np.array(vel[:2], dtype=np.float32)
 
             obs = []
-
-            # =================================================
-            # OWN STATE
-            # =================================================
-
             obs.extend(pos)
-
             obs.extend(vel)
 
-            # =================================================
-            # TARGET RELATIVE POSITION
-            # =================================================
-
             rel_target = self.target_pos - pos
-
             obs.extend(rel_target)
-
-            # =================================================
-            # TARGET VELOCITY
-            # =================================================
 
             obs.extend(self.target_velocity)
 
-            # =================================================
-            # FUTURE TARGET POSITION
-            # =================================================
-
             future_target = (
                 self.target_pos
-                + 4.0 * self.target_velocity
+                + 4.0 * self.target_velocity * self.control_dt
             )
 
             future_rel = future_target - pos
-
             obs.extend(future_rel)
-            # =================================================
-            # NEIGHBOR RELATIVE POSITIONS
-            # =================================================
 
             for j, other_drone in enumerate(self.drones):
-
                 if i == j:
                     continue
 
-                other_pos, _ = p.getBasePositionAndOrientation(
-                    other_drone
-                )
-
-                other_pos = np.array(other_pos[:2])
-
-                rel_pos = other_pos - pos
-
-                obs.extend(rel_pos)
+                other_pos, _ = p.getBasePositionAndOrientation(other_drone)
                 other_vel, _ = p.getBaseVelocity(other_drone)
 
-                other_vel = np.array(other_vel[:2])
+                other_pos = np.array(other_pos[:2], dtype=np.float32)
+                other_vel = np.array(other_vel[:2], dtype=np.float32)
 
-                rel_vel = other_vel - vel
+                obs.extend(other_pos - pos)
+                obs.extend(other_vel - vel)
 
-                obs.extend(rel_vel)
-
-            obs_all.append(
-                np.array(obs, dtype=np.float32)
-            )
+            obs_all.append(np.array(obs, dtype=np.float32))
 
         return obs_all
-
-    # =========================================================
-    # GLOBAL STATE
-    # =========================================================
 
     def get_global_state(self):
 
         state = []
 
         for drone in self.drones:
-
-            pos, _ = p.getBasePositionAndOrientation(
-                drone
-            )
-
+            pos, _ = p.getBasePositionAndOrientation(drone)
             vel, _ = p.getBaseVelocity(drone)
 
             state.extend(pos[:2])
-
             state.extend(vel[:2])
 
         state.extend(self.target_pos)
 
         return np.array(state, dtype=np.float32)
 
-    # =========================================================
-    # RENDER
-    # =========================================================
-
     def render(self):
-
         pass
 
-    # =========================================================
-    # CLOSE
-    # =========================================================
-
     def close(self):
-
         p.disconnect()

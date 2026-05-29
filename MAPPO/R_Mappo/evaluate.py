@@ -47,17 +47,19 @@ def main():
     env = DroneSwarmEnv(
         num_drones=NUM_DRONES,
         gui=GUI,
-        max_steps=MAX_STEPS
+        max_steps=MAX_STEPS,
+        control_dt=CONTROL_DT,
+        max_speed=MAX_SPEED,
+        velocity_response=VELOCITY_RESPONSE,
+        capture_radius=CAPTURE_RADIUS,
+        safe_spacing=SAFE_SPACING
     )
 
     obs_dim = env.observation_space.shape[0]
 
     action_dim = env.action_space.shape[0]
 
-    state_dim = (
-        NUM_DRONES * 4
-        + 2
-    )
+    state_dim = env.get_global_state().shape[0]
 
     # ========================================================
     # AGENT
@@ -66,7 +68,17 @@ def main():
     agent = R_MAPPO(
         obs_dim=obs_dim,
         state_dim=state_dim,
-        action_dim=action_dim
+        action_dim=action_dim,
+        lr_actor=LR_ACTOR,
+        lr_critic=LR_CRITIC,
+        gamma=GAMMA,
+        lam=LAMBDA,
+        clip_eps=CLIP_EPS,
+        epochs=PPO_EPOCHS,
+        entropy_coef=ENTROPY_COEF,
+        value_coef=VALUE_COEF,
+        hidden_dim=HIDDEN_DIM,
+        sequence_length=SEQUENCE_LENGTH
     )
 
     # ========================================================
@@ -80,7 +92,7 @@ def main():
     # ========================================================
     # EVALUATION LOOP
     # ========================================================
-    capture_threshold = 1.0
+    capture_threshold = CAPTURE_RADIUS
 
     successful_captures = 0
 
@@ -91,6 +103,7 @@ def main():
         state = env.get_global_state()
 
         episode_reward = 0
+        episode_captured = False
 
         # ====================================================
         # GRU HIDDEN STATES
@@ -131,7 +144,8 @@ def main():
                         obs[drone_idx],
                         state,
                         actor_hiddens[drone_idx],
-                        critic_hiddens[drone_idx]
+                        critic_hiddens[drone_idx],
+                        deterministic=True
                     )
 
                     action = clip_actions(action)
@@ -180,9 +194,13 @@ def main():
 
             min_distance = np.min(distances_to_target)
 
-            if min_distance < capture_threshold:
+            if (
+                min_distance < capture_threshold
+                and not episode_captured
+            ):
 
                 successful_captures += 1
+                episode_captured = True
 
             done = any(dones)
 
@@ -268,7 +286,7 @@ def main():
 
         print(
             f"Evaluation Episode {episode} | "
-            f"Reward: {episode_reward:.2f}"
+            f"Reward: {episode_reward:.2f} | "
             f"Captures: {successful_captures} | "
             f"Escape Corridor: {escape_corridor:.2f}"
         )

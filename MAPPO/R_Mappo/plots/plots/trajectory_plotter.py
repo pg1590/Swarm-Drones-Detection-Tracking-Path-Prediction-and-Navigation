@@ -3,20 +3,6 @@ import matplotlib.pyplot as plt
 import os
 
 
-def _ensure_save_dir(save_path):
-
-    if save_path is None:
-        return
-
-    directory = os.path.dirname(save_path)
-
-    if directory:
-        os.makedirs(
-            directory,
-            exist_ok=True
-        )
-
-
 # ============================================================
 # TRAJECTORY PLOT
 # ============================================================
@@ -248,7 +234,10 @@ def plot_trajectories(
 
     if save_path is not None:
 
-        _ensure_save_dir(save_path)
+        os.makedirs(
+            os.path.dirname(save_path),
+            exist_ok=True
+        )
 
         plt.savefig(
             save_path,
@@ -296,7 +285,10 @@ def plot_rewards(
 
     if save_path is not None:
 
-        _ensure_save_dir(save_path)
+        os.makedirs(
+            os.path.dirname(save_path),
+            exist_ok=True
+        )
 
         plt.savefig(
             save_path,
@@ -327,16 +319,11 @@ def plot_smoothed_rewards(
 
     rewards = np.array(rewards)
 
-    if len(rewards) > 0:
-        window = min(window, len(rewards))
-
-        smoothed = np.convolve(
-            rewards,
-            np.ones(window) / window,
-            mode='valid'
-        )
-    else:
-        smoothed = np.array([])
+    smoothed = np.convolve(
+        rewards,
+        np.ones(window) / window,
+        mode='valid'
+    )
 
     plt.figure(figsize=(10, 5))
 
@@ -354,7 +341,10 @@ def plot_smoothed_rewards(
 
     if save_path is not None:
 
-        _ensure_save_dir(save_path)
+        os.makedirs(
+            os.path.dirname(save_path),
+            exist_ok=True
+        )
 
         plt.savefig(
             save_path,
@@ -381,16 +371,11 @@ def plot_capture_rate(
         capture_history
     )
 
-    if len(capture_history) > 0:
-        window = min(window, len(capture_history))
-
-        smoothed = np.convolve(
-            capture_history,
-            np.ones(window) / window,
-            mode='valid'
-        )
-    else:
-        smoothed = np.array([])
+    smoothed = np.convolve(
+        capture_history,
+        np.ones(window) / window,
+        mode='valid'
+    )
 
     plt.figure(figsize=(10, 5))
 
@@ -407,8 +392,6 @@ def plot_capture_rate(
     plt.grid(True)
 
     if save_path is not None:
-
-        _ensure_save_dir(save_path)
 
         plt.savefig(
             save_path,
@@ -439,8 +422,6 @@ def plot_mean_distance(
 
     if save_path is not None:
 
-        _ensure_save_dir(save_path)
-
         plt.savefig(
             save_path,
             bbox_inches='tight'
@@ -469,8 +450,6 @@ def plot_coverage(
     plt.grid(True)
 
     if save_path is not None:
-
-        _ensure_save_dir(save_path)
 
         plt.savefig(
             save_path,
@@ -501,8 +480,6 @@ def plot_escape_gap(
 
     if save_path is not None:
 
-        _ensure_save_dir(save_path)
-
         plt.savefig(
             save_path,
             bbox_inches='tight'
@@ -530,8 +507,6 @@ def plot_velocity_diversity(
     plt.grid(True)
 
     if save_path is not None:
-
-        _ensure_save_dir(save_path)
 
         plt.savefig(
             save_path,

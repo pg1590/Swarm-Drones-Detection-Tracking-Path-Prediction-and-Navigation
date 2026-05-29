@@ -6,9 +6,19 @@ NUM_DRONES = 3
 
 MAX_EPISODES = 2000
 
-MAX_STEPS = 128
+MAX_STEPS = 160
 
 GUI = False
+
+CONTROL_DT = 1.0 / 30.0
+
+MAX_SPEED = 2.0
+
+VELOCITY_RESPONSE = 0.35
+
+CAPTURE_RADIUS = 0.8
+
+SAFE_SPACING = 0.45
 
 
 # ============================================================
@@ -46,7 +56,7 @@ VALUE_COEF = 0.5
 # GRU
 # ============================================================
 
-HIDDEN_DIM = 64
+HIDDEN_DIM = 128
 
 
 # ============================================================

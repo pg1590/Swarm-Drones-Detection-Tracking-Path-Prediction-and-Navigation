@@ -22,7 +22,8 @@ class R_MAPPO:
         epochs=10,
         entropy_coef=0.03,
         value_coef=0.5,
-        hidden_dim=128
+        hidden_dim=128,
+        sequence_length=16
     ):
 
         self.gamma = gamma
@@ -34,6 +35,7 @@ class R_MAPPO:
 
         self.entropy_coef = entropy_coef
         self.value_coef = value_coef
+        self.sequence_length = sequence_length
 
         # =====================================================
         # NETWORKS
@@ -73,7 +75,8 @@ class R_MAPPO:
         obs,
         state,
         actor_hidden,
-        critic_hidden
+        critic_hidden,
+        deterministic=False
     ):
 
         """
@@ -101,7 +104,10 @@ class R_MAPPO:
             actor_hidden
         )
 
-        action = dist.sample()
+        if deterministic:
+            action = dist.mean
+        else:
+            action = dist.sample()
 
         log_prob = dist.log_prob(action).sum(dim=-1)
 
@@ -130,20 +136,83 @@ class R_MAPPO:
     # PPO UPDATE
     # =========================================================
 
-    def update(self, buffer):
+    def update(self, buffers):
 
-        (
-            obs,
-            states,
-            actions,
-            old_log_probs,
-            values,
-            returns,
-            advantages,
-            dones,
-            actor_hidden_states,
-            critic_hidden_states
-        ) = buffer.get_tensors(device)
+        if not isinstance(buffers, (list, tuple)):
+            buffers = [buffers]
+
+        sequence_batches = []
+
+        for buffer in buffers:
+            (
+                obs,
+                states,
+                actions,
+                old_log_probs,
+                values,
+                returns,
+                advantages,
+                dones,
+                actor_hidden_states,
+                critic_hidden_states
+            ) = buffer.get_tensors(device)
+
+            sequence_batch = self._prepare_sequence_batch(
+                obs,
+                states,
+                actions,
+                old_log_probs,
+                returns,
+                advantages,
+                actor_hidden_states,
+                critic_hidden_states
+            )
+
+            if sequence_batch is not None:
+                sequence_batches.append(sequence_batch)
+
+        if len(sequence_batches) == 0:
+            return
+
+        obs = torch.cat(
+            [batch["obs"] for batch in sequence_batches],
+            dim=0
+        )
+
+        states = torch.cat(
+            [batch["states"] for batch in sequence_batches],
+            dim=0
+        )
+
+        actions = torch.cat(
+            [batch["actions"] for batch in sequence_batches],
+            dim=0
+        )
+
+        old_log_probs = torch.cat(
+            [batch["old_log_probs"] for batch in sequence_batches],
+            dim=0
+        )
+
+        returns = torch.cat(
+            [batch["returns"] for batch in sequence_batches],
+            dim=0
+        )
+
+        advantages = torch.cat(
+            [batch["advantages"] for batch in sequence_batches],
+            dim=0
+        )
+
+        initial_actor_hidden = torch.cat(
+            [batch["actor_hidden"] for batch in sequence_batches],
+            dim=1
+        )
+
+        initial_critic_hidden = torch.cat(
+            [batch["critic_hidden"] for batch in sequence_batches],
+            dim=1
+        )
 
         # =====================================================
         # NORMALIZE ADVANTAGES
@@ -160,63 +229,6 @@ class R_MAPPO:
         )
 
         # =====================================================
-        # RESHAPE FOR GRU
-        # =====================================================
-
-        seq_len = 16
-
-        num_steps = obs.shape[0]
-
-        usable_steps = (num_steps // seq_len) * seq_len
-
-        obs = obs[:usable_steps]
-        states = states[:usable_steps]
-        actions = actions[:usable_steps]
-
-        old_log_probs = old_log_probs[:usable_steps]
-
-        returns = returns[:usable_steps]
-        advantages = advantages[:usable_steps]
-
-        actor_hidden_states = actor_hidden_states[:, :usable_steps, :]
-        critic_hidden_states = critic_hidden_states[:, :usable_steps, :]
-
-        num_sequences = usable_steps // seq_len
-
-        obs = obs.view(
-            num_sequences,
-            seq_len,
-            -1
-        )
-
-        states = states.view(
-            num_sequences,
-            seq_len,
-            -1
-        )
-
-        actions = actions.view(
-            num_sequences,
-            seq_len,
-            -1
-        )
-
-        old_log_probs = old_log_probs.view(
-            num_sequences,
-            seq_len
-        )
-
-        returns = returns.view(
-            num_sequences,
-            seq_len
-        )
-
-        advantages = advantages.view(
-            num_sequences,
-            seq_len
-        )
-
-        # =====================================================
         # PPO EPOCHS
         # =====================================================
 
@@ -225,10 +237,6 @@ class R_MAPPO:
             # =================================================
             # ACTOR FORWARD
             # =================================================
-
-            initial_actor_hidden = actor_hidden_states[
-                :, ::seq_len, :
-            ].permute(0, 1, 2)
 
             dist, _ = self.actor(
                 obs,
@@ -264,10 +272,6 @@ class R_MAPPO:
             # =================================================
             # CRITIC FORWARD
             # =================================================
-
-            initial_critic_hidden = critic_hidden_states[
-                :, ::seq_len, :
-            ].permute(0, 1, 2)
 
             values_pred, _ = self.critic(
                 states,
@@ -322,6 +326,79 @@ class R_MAPPO:
             )
 
             self.critic_optimizer.step()
+
+    def _prepare_sequence_batch(
+        self,
+        obs,
+        states,
+        actions,
+        old_log_probs,
+        returns,
+        advantages,
+        actor_hidden_states,
+        critic_hidden_states
+    ):
+
+        seq_len = self.sequence_length
+        num_steps = obs.shape[0]
+        usable_steps = (num_steps // seq_len) * seq_len
+
+        if usable_steps == 0:
+            return None
+
+        num_sequences = usable_steps // seq_len
+
+        obs = obs[:usable_steps].view(
+            num_sequences,
+            seq_len,
+            -1
+        )
+
+        states = states[:usable_steps].view(
+            num_sequences,
+            seq_len,
+            -1
+        )
+
+        actions = actions[:usable_steps].view(
+            num_sequences,
+            seq_len,
+            -1
+        )
+
+        old_log_probs = old_log_probs[:usable_steps].view(
+            num_sequences,
+            seq_len
+        )
+
+        returns = returns[:usable_steps].view(
+            num_sequences,
+            seq_len
+        )
+
+        advantages = advantages[:usable_steps].view(
+            num_sequences,
+            seq_len
+        )
+
+        actor_hidden = actor_hidden_states[
+            :, :usable_steps, :
+        ][:, ::seq_len, :]
+
+        critic_hidden = critic_hidden_states[
+            :, :usable_steps, :
+        ][:, ::seq_len, :]
+
+        return {
+            "obs": obs,
+            "states": states,
+            "actions": actions,
+            "old_log_probs": old_log_probs,
+            "returns": returns,
+            "advantages": advantages,
+            "actor_hidden": actor_hidden,
+            "critic_hidden": critic_hidden
+        }
 
     # =========================================================
     # SAVE
