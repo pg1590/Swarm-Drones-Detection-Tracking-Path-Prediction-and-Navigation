@@ -1,5 +1,6 @@
 import gymnasium as gym
 from gymnasium import spaces
+import itertools
 import numpy as np
 import pybullet as p
 import pybullet_data
@@ -34,13 +35,18 @@ class DroneSwarmEnv(gym.Env):
 
         # Reward scales for Stage 1: homogeneous agents with emergent roles.
         self.pursuer_progress_scale = 8.0
-        self.helper_progress_scale = 2.0
-        self.team_progress_scale = 10.0
+        self.helper_progress_scale = 0.5
+        self.team_progress_scale = 3.0
         self.closest_bonus_scale = 1.2
-        self.coverage_scale = 4.0
-        self.capture_reward = 60.0
-        self.capture_agent_bonus = 20.0
-        self.max_reward = 30.0
+        self.coverage_scale = 2.0
+        self.helper_support_scale = 2.5
+        self.helper_ring_scale = 1.5
+        self.helper_alignment_scale = 0.4
+        self.support_radius = 1.5
+        self.support_angle = 2.0 * np.pi / 3.0
+        self.capture_reward = 100.0
+        self.capture_agent_bonus = 30.0
+        self.max_shaping_reward = 30.0
 
         self.debug_stats = {
             "capture_rate": [],
@@ -316,16 +322,26 @@ class DroneSwarmEnv(gym.Env):
         coverage_reward, largest_gap = self._angular_coverage(positions)
         coverage_gate = np.clip((5.0 - mean_distance) / 3.0, 0.0, 1.0)
         velocity_diversity = self._velocity_diversity(velocities)
+        helper_targets = self._helper_support_assignments(
+            positions,
+            closest_idx
+        )
 
         capture = min_distance < self.capture_radius
 
         for i in range(self.num_drones):
-            progress_scale = self.helper_progress_scale
             if i == closest_idx:
-                progress_scale = self.pursuer_progress_scale
                 rewards[i] += self.closest_bonus_scale / (distances[i] + 0.5)
+                rewards[i] += (
+                    self.pursuer_progress_scale
+                    * individual_progress[i]
+                )
+            else:
+                rewards[i] += (
+                    self.helper_progress_scale
+                    * individual_progress[i]
+                )
 
-            rewards[i] += progress_scale * individual_progress[i]
             rewards[i] += self.team_progress_scale * team_progress
             rewards[i] += 0.8 / (mean_distance + 1.0)
 
@@ -347,17 +363,20 @@ class DroneSwarmEnv(gym.Env):
                 if i == closest_idx:
                     rewards[i] += 0.6 * alignment
                 else:
-                    rewards[i] += 0.2 * alignment
+                    rewards[i] += 0.1 * alignment
+
+            if i != closest_idx and i in helper_targets:
+                rewards[i] += self._helper_support_reward(
+                    positions[i],
+                    velocities[i],
+                    helper_targets[i]
+                )
 
             if speed < 0.05 and distances[i] > self.capture_radius:
                 rewards[i] -= 0.05
 
             rewards[i] -= 0.02 * float(np.linalg.norm(actions[i]) ** 2)
             rewards[i] -= self._spacing_penalty(positions, i)
-
-        if capture:
-            rewards += self.capture_reward
-            rewards[closest_idx] += self.capture_agent_bonus
 
         self.debug_stats["capture_rate"].append(int(capture))
         self.debug_stats["mean_distance"].append(mean_distance)
@@ -368,11 +387,133 @@ class DroneSwarmEnv(gym.Env):
 
         rewards = np.clip(
             rewards,
-            -self.max_reward,
-            self.max_reward
+            -self.max_shaping_reward,
+            self.max_shaping_reward
         )
 
+        if capture:
+            rewards += self.capture_reward
+            rewards[closest_idx] += self.capture_agent_bonus
+
         return [float(r) for r in rewards], capture
+
+    def _helper_support_reward(
+        self,
+        position,
+        velocity,
+        support_target
+    ):
+
+        support_error = np.linalg.norm(position - support_target)
+
+        support_score = np.exp(
+            -(support_error ** 2) / 2.0
+        )
+
+        distance_to_target = np.linalg.norm(
+            position - self.target_pos
+        )
+
+        ring_error = abs(
+            distance_to_target
+            - self.support_radius
+        )
+
+        ring_score = np.exp(
+            -(ring_error ** 2) / 0.5
+        )
+
+        reward = (
+            self.helper_support_scale * support_score
+            + self.helper_ring_scale * ring_score
+        )
+
+        to_support = support_target - position
+        to_support_norm = np.linalg.norm(to_support)
+        speed = np.linalg.norm(velocity)
+
+        if to_support_norm > 1e-6 and speed > 1e-6:
+            support_dir = to_support / to_support_norm
+            vel_dir = velocity / speed
+            reward += self.helper_alignment_scale * float(
+                np.dot(vel_dir, support_dir)
+            )
+
+        return reward
+
+    def _helper_support_assignments(
+        self,
+        positions,
+        closest_idx
+    ):
+
+        helper_indices = [
+            i
+            for i in range(self.num_drones)
+            if i != closest_idx
+        ]
+
+        if len(helper_indices) == 0:
+            return {}
+
+        pursuer_rel = positions[closest_idx] - self.target_pos
+        pursuer_norm = np.linalg.norm(pursuer_rel)
+
+        if pursuer_norm > 1e-6:
+            pursuer_angle = np.arctan2(
+                pursuer_rel[1],
+                pursuer_rel[0]
+            )
+        else:
+            pursuer_angle = 0.0
+
+        if len(helper_indices) == 1:
+            support_offsets = [np.pi]
+        else:
+            support_offsets = np.linspace(
+                -self.support_angle,
+                self.support_angle,
+                len(helper_indices)
+            )
+
+        support_points = []
+
+        for offset in support_offsets:
+            support_angle = pursuer_angle + offset
+            support_points.append(
+                self.target_pos
+                + self.support_radius * np.array([
+                    np.cos(support_angle),
+                    np.sin(support_angle)
+                ], dtype=np.float32)
+            )
+
+        best_assignment = None
+        best_cost = np.inf
+
+        for permutation in itertools.permutations(helper_indices):
+            cost = 0.0
+
+            for helper_idx, support_point in zip(
+                permutation,
+                support_points
+            ):
+                cost += np.linalg.norm(
+                    positions[helper_idx]
+                    - support_point
+                )
+
+            if cost < best_cost:
+                best_cost = cost
+                best_assignment = permutation
+
+        return {
+            helper_idx: support_point
+            for helper_idx, support_point in zip(
+                best_assignment,
+                support_points
+            )
+        }
 
     def _spacing_penalty(self, positions, drone_idx):
 

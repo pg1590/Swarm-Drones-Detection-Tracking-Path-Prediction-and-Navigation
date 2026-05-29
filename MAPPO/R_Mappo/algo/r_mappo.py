@@ -36,6 +36,7 @@ class R_MAPPO:
         self.entropy_coef = entropy_coef
         self.value_coef = value_coef
         self.sequence_length = sequence_length
+        self.action_epsilon = 1e-6
 
         # =====================================================
         # NETWORKS
@@ -105,11 +106,17 @@ class R_MAPPO:
         )
 
         if deterministic:
-            action = dist.mean
+            raw_action = dist.mean
         else:
-            action = dist.sample()
+            raw_action = dist.rsample()
 
-        log_prob = dist.log_prob(action).sum(dim=-1)
+        action = torch.tanh(raw_action)
+
+        log_prob = self._squashed_log_prob(
+            dist,
+            raw_action,
+            action
+        )
 
         # =====================================================
         # CRITIC
@@ -130,6 +137,56 @@ class R_MAPPO:
             value.item(),
             next_actor_hidden.detach(),
             next_critic_hidden.detach()
+        )
+
+    def _atanh(self, action):
+
+        action = torch.clamp(
+            action,
+            -1.0 + self.action_epsilon,
+            1.0 - self.action_epsilon
+        )
+
+        return 0.5 * (
+            torch.log1p(action)
+            - torch.log1p(-action)
+        )
+
+    def _squashed_log_prob(
+        self,
+        dist,
+        raw_action,
+        action
+    ):
+
+        raw_log_prob = dist.log_prob(raw_action).sum(dim=-1)
+
+        squash_correction = torch.log(
+            1.0
+            - action.pow(2)
+            + self.action_epsilon
+        ).sum(dim=-1)
+
+        return raw_log_prob - squash_correction
+
+    def _log_prob_from_squashed_action(
+        self,
+        dist,
+        action
+    ):
+
+        action = torch.clamp(
+            action,
+            -1.0 + self.action_epsilon,
+            1.0 - self.action_epsilon
+        )
+
+        raw_action = self._atanh(action)
+
+        return self._squashed_log_prob(
+            dist,
+            raw_action,
+            action
         )
 
     # =========================================================
@@ -243,8 +300,10 @@ class R_MAPPO:
                 initial_actor_hidden.contiguous()
             )
 
-            new_log_probs = dist.log_prob(actions)\
-                .sum(dim=-1)
+            new_log_probs = self._log_prob_from_squashed_action(
+                dist,
+                actions
+            )
 
             entropy = dist.entropy().sum(dim=-1).mean()
 

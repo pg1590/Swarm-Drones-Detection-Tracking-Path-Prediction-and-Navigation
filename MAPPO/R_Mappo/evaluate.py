@@ -9,8 +9,6 @@ from algo.r_mappo import R_MAPPO
 
 from algo.networks import device
 
-from algo.utils import clip_actions
-
 from plots.trajectory_plotter import (
     plot_trajectories
 )
@@ -147,8 +145,6 @@ def main():
                         critic_hiddens[drone_idx],
                         deterministic=True
                     )
-
-                    action = clip_actions(action)
 
                     actions.append(action)
 

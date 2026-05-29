@@ -11,8 +11,7 @@ from algo.networks import device
 
 from algo.utils import (
     set_seed,
-    print_cuda_info,
-    clip_actions
+    print_cuda_info
 )
 
 from plots.trajectory_plotter import (
@@ -165,8 +164,6 @@ def main():
                     actor_hiddens[drone_idx],
                     critic_hiddens[drone_idx]
                 )
-
-                action = clip_actions(action)
 
                 actions.append(action)
 
