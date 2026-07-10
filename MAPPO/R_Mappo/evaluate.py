@@ -57,7 +57,7 @@ def main():
 
     action_dim = env.action_space.shape[0]
 
-    state_dim = env.get_global_state().shape[0]
+    state_dim = env.get_global_state(0).shape[0]
 
     # ========================================================
     # AGENT
@@ -96,7 +96,10 @@ def main():
 
         obs = env.reset()
 
-        state = env.get_global_state()
+        states = [
+            env.get_global_state(drone_idx)
+            for drone_idx in range(NUM_DRONES)
+        ]
 
         episode_reward = 0
         episode_captured = False
@@ -138,7 +141,7 @@ def main():
                     next_actor_hidden, \
                     next_critic_hidden = agent.select_action(
                         obs[drone_idx],
-                        state,
+                        states[drone_idx],
                         actor_hiddens[drone_idx],
                         critic_hiddens[drone_idx],
                         deterministic=True
@@ -162,7 +165,10 @@ def main():
                 actions
             )
 
-            next_state = env.get_global_state()
+            next_states = [
+                env.get_global_state(drone_idx)
+                for drone_idx in range(NUM_DRONES)
+            ]
 
             reward = np.mean(rewards)
 
@@ -252,7 +258,7 @@ def main():
 
             obs = next_obs
 
-            state = next_state
+            states = next_states
 
             actor_hiddens = next_actor_hiddens
 

@@ -725,16 +725,25 @@ class DroneSwarmEnv(gym.Env):
 
         return obs_all
 
-    def get_global_state(self):
+    def get_global_state(self, agent_idx):
+
+        # Agent-centric ordering: own pos/vel first, then the remaining
+        # drones in index order, then the target. All agents see the same
+        # information, but the shared critic can tell whose (per-agent)
+        # return it is predicting.
+        positions, velocities = self._read_drone_states()
+
+        order = [agent_idx] + [
+            j
+            for j in range(self.num_drones)
+            if j != agent_idx
+        ]
 
         state = []
 
-        for drone in self.drones:
-            pos, _ = p.getBasePositionAndOrientation(drone)
-            vel, _ = p.getBaseVelocity(drone)
-
-            state.extend(pos[:2])
-            state.extend(vel[:2])
+        for j in order:
+            state.extend(positions[j])
+            state.extend(velocities[j])
 
         state.extend(self.target_pos)
 
