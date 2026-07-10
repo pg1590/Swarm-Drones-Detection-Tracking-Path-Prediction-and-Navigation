@@ -189,7 +189,7 @@ def main():
             # ENV STEP
             # ================================================
 
-            next_obs, rewards, dones, info = env.step(
+            next_obs, rewards, terminateds, truncateds, info = env.step(
                 actions
             )
 
@@ -200,12 +200,39 @@ def main():
 
             reward = np.mean(rewards)
 
-            done = any(dones)
+            terminated = any(terminateds)
+            truncated = any(truncateds)
+            done = terminated or truncated
 
             episode_reward += reward
 
             if info.get("capture", False):
                 episode_capture = True
+
+            # ================================================
+            # TRUNCATION BOOTSTRAP VALUE
+            # ================================================
+
+            # On truncation the successor state's value must be
+            # recorded now: after the reset it is unrecoverable.
+            bootstrap_values = [0.0] * NUM_DRONES
+
+            if truncated and not terminated:
+
+                with torch.no_grad():
+
+                    for drone_idx in range(NUM_DRONES):
+
+                        state_tensor = torch.FloatTensor(
+                            next_states[drone_idx]
+                        ).unsqueeze(0).unsqueeze(0).to(device)
+
+                        bootstrap_value, _ = agent.critic(
+                            state_tensor,
+                            next_critic_hiddens[drone_idx]
+                        )
+
+                        bootstrap_values[drone_idx] = bootstrap_value.item()
 
             # ================================================
             # STORE IN BUFFER
@@ -220,9 +247,11 @@ def main():
                     log_prob=log_probs[drone_idx],
                     value=values[drone_idx],
                     reward=rewards[drone_idx],
-                    done=done,
+                    terminated=terminated,
+                    truncated=truncated,
                     actor_hidden=actor_hiddens[drone_idx],
-                    critic_hidden=critic_hiddens[drone_idx]
+                    critic_hidden=critic_hiddens[drone_idx],
+                    bootstrap_value=bootstrap_values[drone_idx]
                 )
 
             # ================================================

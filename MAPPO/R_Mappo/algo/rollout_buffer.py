@@ -37,6 +37,13 @@ class RolloutBuffer:
         self.rewards = []
         self.dones = []
 
+        # Terminated: true MDP terminal (no bootstrap).
+        # Truncated: episode cut short; bootstrap_values holds
+        # V(s_{t+1}) computed at rollout time, before the reset.
+        self.terminateds = []
+        self.truncateds = []
+        self.bootstrap_values = []
+
         # =====================================================
         # RECURRENT HIDDEN STATES
         # =====================================================
@@ -52,9 +59,11 @@ class RolloutBuffer:
         log_prob,
         value,
         reward,
-        done,
+        terminated,
+        truncated,
         actor_hidden,
-        critic_hidden
+        critic_hidden,
+        bootstrap_value=0.0
     ):
 
         self.obs.append(obs)
@@ -66,7 +75,11 @@ class RolloutBuffer:
         self.values.append(value)
 
         self.rewards.append(reward)
-        self.dones.append(done)
+        self.dones.append(terminated or truncated)
+
+        self.terminateds.append(terminated)
+        self.truncateds.append(truncated)
+        self.bootstrap_values.append(bootstrap_value)
 
         self.actor_hidden_states.append(actor_hidden)
         self.critic_hidden_states.append(critic_hidden)
@@ -86,9 +99,18 @@ class RolloutBuffer:
 
         for step in reversed(range(len(self.rewards))):
 
+            if self.terminateds[step]:
+                next_value = 0.0
+            elif self.truncateds[step]:
+                # Partial-episode bootstrapping (Pardo et al. 2018):
+                # V(s_{t+1}) recorded at rollout time, before the reset.
+                next_value = self.bootstrap_values[step]
+            else:
+                next_value = values[step + 1]
+
             delta = (
                 self.rewards[step]
-                + gamma * values[step + 1] * (1 - self.dones[step])
+                + gamma * next_value
                 - values[step]
             )
 

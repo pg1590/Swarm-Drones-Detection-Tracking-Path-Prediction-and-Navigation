@@ -230,12 +230,18 @@ class DroneSwarmEnv(gym.Env):
             processed_actions
         )
 
-        dones = [False] * self.num_drones
-        if capture or self.current_step >= self.max_steps:
-            dones = [True] * self.num_drones
+        # Gymnasium-style split: capture is a true MDP terminal, while the
+        # time limit and the escape cutoff end the episode early from a
+        # recoverable state, so GAE must bootstrap their final states.
+        terminated = bool(capture)
+
+        truncated = self.current_step >= self.max_steps
 
         if float(np.mean(distances)) > 12.0:
-            dones = [True] * self.num_drones
+            truncated = True
+
+        terminateds = [terminated] * self.num_drones
+        truncateds = [truncated] * self.num_drones
 
         self.prev_distances = distances.copy()
         self.prev_team_distance = float(np.mean(distances))
@@ -248,7 +254,8 @@ class DroneSwarmEnv(gym.Env):
         return (
             next_obs,
             rewards,
-            dones,
+            terminateds,
+            truncateds,
             {
                 "capture": bool(capture),
                 "min_distance": float(np.min(distances)),

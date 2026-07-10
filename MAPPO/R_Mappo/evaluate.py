@@ -161,7 +161,7 @@ def main():
             # ENV STEP
             # ================================================
 
-            next_obs, rewards, dones, info = env.step(
+            next_obs, rewards, terminateds, truncateds, info = env.step(
                 actions
             )
 
@@ -199,7 +199,7 @@ def main():
                 successful_captures += 1
                 episode_captured = True
 
-            done = any(dones)
+            done = any(terminateds) or any(truncateds)
 
             episode_reward += reward
 
