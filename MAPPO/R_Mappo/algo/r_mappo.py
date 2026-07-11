@@ -231,6 +231,10 @@ class R_MAPPO:
 
         sequence_batches = []
 
+        # Diagnostics only (environment-scale, from rollout)
+        ev_values = []
+        ev_returns = []
+
         for buffer in buffers:
             (
                 obs,
@@ -259,9 +263,11 @@ class R_MAPPO:
 
             if sequence_batch is not None:
                 sequence_batches.append(sequence_batch)
+                ev_values.append(values)
+                ev_returns.append(returns)
 
         if len(sequence_batches) == 0:
-            return
+            return None
 
         obs = torch.cat(
             [batch["obs"] for batch in sequence_batches],
@@ -321,6 +327,23 @@ class R_MAPPO:
             -5.0,
             5.0
         )
+
+        # =====================================================
+        # DIAGNOSTICS (logging only, no gradient effect)
+        # =====================================================
+
+        all_ev_values = torch.cat(ev_values)
+        all_ev_returns = torch.cat(ev_returns)
+
+        explained_variance = (
+            1.0
+            - (all_ev_returns - all_ev_values).var()
+            / (all_ev_returns.var() + 1e-8)
+        ).item()
+
+        actor_losses = []
+        critic_losses = []
+        entropies = []
 
         # =====================================================
         # PPO EPOCHS
@@ -389,6 +412,10 @@ class R_MAPPO:
                 (normalized_returns - values_pred) ** 2
             ).mean()
 
+            actor_losses.append(actor_loss.item())
+            critic_losses.append(critic_loss.item())
+            entropies.append(entropy.item())
+
             # =================================================
             # TOTAL LOSSES
             # =================================================
@@ -431,6 +458,19 @@ class R_MAPPO:
             )
 
             self.critic_optimizer.step()
+
+        value_norm_mean, value_norm_var = \
+            self.value_normalizer.running_mean_var()
+
+        return {
+            "actor_loss": sum(actor_losses) / len(actor_losses),
+            "critic_loss": sum(critic_losses) / len(critic_losses),
+            "entropy": sum(entropies) / len(entropies),
+            "explained_variance": explained_variance,
+            "value_norm_mean": value_norm_mean.item(),
+            "value_norm_var": value_norm_var.item(),
+            "lr": self.actor_optimizer.param_groups[0]["lr"],
+        }
 
     def _prepare_sequence_batch(
         self,

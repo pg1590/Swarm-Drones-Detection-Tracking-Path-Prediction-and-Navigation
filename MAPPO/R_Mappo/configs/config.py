@@ -2,9 +2,13 @@
 # ENVIRONMENT
 # ============================================================
 
+import os
+
 NUM_DRONES = 3
 
-MAX_EPISODES = 3000
+# Overridable from the shell for smoke tests, e.g.
+#   MAX_EPISODES=400 python3 train.py
+MAX_EPISODES = int(os.environ.get("MAX_EPISODES", "3000"))
 
 MAX_STEPS = 160
 
@@ -66,6 +70,8 @@ HIDDEN_DIM = 128
 UPDATE_TIMESTEPS = 1024
 
 SAVE_INTERVAL = 50
+
+LOG_INTERVAL = 10
 
 SEED = 42
 

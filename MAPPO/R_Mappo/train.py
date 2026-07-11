@@ -103,6 +103,9 @@ def main():
 
     episode_rewards = []
     episode_captures = []
+    episode_lengths = []
+
+    last_train_stats = None
 
     best_reward = -1e9
 
@@ -287,9 +290,12 @@ def main():
 
                 if len(eligible_buffers) > 0:
 
-                    agent.update(
+                    train_stats = agent.update(
                         eligible_buffers
                     )
+
+                    if train_stats is not None:
+                        last_train_stats = train_stats
 
                 for drone_idx in range(NUM_DRONES):
                     buffers[drone_idx].clear()
@@ -320,6 +326,7 @@ def main():
 
         episode_rewards.append(episode_reward)
         episode_captures.append(int(episode_capture))
+        episode_lengths.append(env.current_step)
 
         print(
             f"Episode: {episode} | "
@@ -332,6 +339,44 @@ def main():
             f"GapExcess: {env.debug_stats['gap_excess'][-1]:.3f} | "
             f"MeanDist: {env.debug_stats['mean_distance'][-1]:.3f}"
         )
+
+        # ====================================================
+        # PERIODIC METRICS
+        # ====================================================
+
+        if (episode + 1) % LOG_INTERVAL == 0:
+
+            window = min(50, len(episode_rewards))
+
+            print(
+                "[METRICS] "
+                f"MeanReward({window}): "
+                f"{np.mean(episode_rewards[-window:]):.2f} | "
+                f"CaptureRate({window}): "
+                f"{np.mean(episode_captures[-window:]):.2f} | "
+                f"MeanEpLen({window}): "
+                f"{np.mean(episode_lengths[-window:]):.1f}"
+            )
+
+            if last_train_stats is not None:
+
+                print(
+                    "[METRICS] "
+                    f"ActorLoss: {last_train_stats['actor_loss']:.4f} | "
+                    f"CriticLoss: {last_train_stats['critic_loss']:.4f} | "
+                    f"Entropy: {last_train_stats['entropy']:.4f} | "
+                    f"ExplainedVar: "
+                    f"{last_train_stats['explained_variance']:.3f}"
+                )
+
+                print(
+                    "[METRICS] "
+                    f"ValueNormMean: "
+                    f"{last_train_stats['value_norm_mean']:.3f} | "
+                    f"ValueNormVar: "
+                    f"{last_train_stats['value_norm_var']:.3f} | "
+                    f"LR: {last_train_stats['lr']:.2e}"
+                )
 
         # ====================================================
         # SAVE BEST MODEL
