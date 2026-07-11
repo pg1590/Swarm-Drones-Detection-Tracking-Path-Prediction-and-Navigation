@@ -219,20 +219,12 @@ def main():
 
             if truncated and not terminated:
 
-                with torch.no_grad():
+                for drone_idx in range(NUM_DRONES):
 
-                    for drone_idx in range(NUM_DRONES):
-
-                        state_tensor = torch.FloatTensor(
-                            next_states[drone_idx]
-                        ).unsqueeze(0).unsqueeze(0).to(device)
-
-                        bootstrap_value, _ = agent.critic(
-                            state_tensor,
-                            next_critic_hiddens[drone_idx]
-                        )
-
-                        bootstrap_values[drone_idx] = bootstrap_value.item()
+                    bootstrap_values[drone_idx] = agent.get_value(
+                        next_states[drone_idx],
+                        next_critic_hiddens[drone_idx]
+                    )
 
             # ================================================
             # STORE IN BUFFER
@@ -276,18 +268,10 @@ def main():
 
                 for drone_idx in range(NUM_DRONES):
 
-                    with torch.no_grad():
-
-                        state_tensor = torch.FloatTensor(
-                            states[drone_idx]
-                        ).unsqueeze(0).unsqueeze(0).to(device)
-
-                        last_value, _ = agent.critic(
-                            state_tensor,
-                            critic_hiddens[drone_idx]
-                        )
-
-                        last_value = last_value.item()
+                    last_value = agent.get_value(
+                        states[drone_idx],
+                        critic_hiddens[drone_idx]
+                    )
 
                     buffers[drone_idx].compute_returns_and_advantages(
                         last_value,

@@ -5,6 +5,7 @@ import torch.optim as optim
 from algo.networks import RecurrentActor
 from algo.networks import RecurrentCritic
 from algo.networks import device
+from algo.value_norm import ValueNorm
 
 
 class R_MAPPO:
@@ -52,6 +53,11 @@ class R_MAPPO:
             state_dim,
             hidden_dim
         ).to(device)
+
+        # Canonical MAPPO ValueNorm: critic targets are normalized by
+        # running statistics; critic outputs are denormalized wherever
+        # they re-enter environment-scale computations (GAE).
+        self.value_normalizer = ValueNorm(1).to(device)
 
         # =====================================================
         # OPTIMIZERS
@@ -131,6 +137,9 @@ class R_MAPPO:
             state_tensor,
             critic_hidden
         )
+
+        value = self.value_normalizer.denormalize(value)
+
         return (
             action.squeeze(0).squeeze(0).detach().cpu().numpy(),
             log_prob.item(),
@@ -138,6 +147,28 @@ class R_MAPPO:
             next_actor_hidden.detach(),
             next_critic_hidden.detach()
         )
+
+    def get_value(self, state, critic_hidden):
+
+        """
+        Environment-scale value of a state, for GAE bootstrapping.
+        """
+
+        state_tensor = torch.FloatTensor(state)\
+            .unsqueeze(0)\
+            .unsqueeze(0)\
+            .to(device)
+
+        with torch.no_grad():
+
+            value, _ = self.critic(
+                state_tensor,
+                critic_hidden
+            )
+
+            value = self.value_normalizer.denormalize(value)
+
+        return value.item()
 
     def _atanh(self, action):
 
@@ -221,6 +252,7 @@ class R_MAPPO:
                 old_log_probs,
                 returns,
                 advantages,
+                dones,
                 actor_hidden_states,
                 critic_hidden_states
             )
@@ -261,6 +293,11 @@ class R_MAPPO:
             dim=0
         )
 
+        masks = torch.cat(
+            [batch["masks"] for batch in sequence_batches],
+            dim=0
+        )
+
         initial_actor_hidden = torch.cat(
             [batch["actor_hidden"] for batch in sequence_batches],
             dim=1
@@ -297,7 +334,8 @@ class R_MAPPO:
 
             dist, _ = self.actor(
                 obs,
-                initial_actor_hidden.contiguous()
+                initial_actor_hidden.contiguous(),
+                masks
             )
 
             new_log_probs = self._log_prob_from_squashed_action(
@@ -334,13 +372,21 @@ class R_MAPPO:
 
             values_pred, _ = self.critic(
                 states,
-                initial_critic_hidden.contiguous()
+                initial_critic_hidden.contiguous(),
+                masks
             )
 
             values_pred = values_pred.squeeze(-1)
 
+            # Critic regresses in normalized-return space; running
+            # statistics are refreshed each epoch as in the official
+            # trainer (cal_value_loss).
+            self.value_normalizer.update(returns)
+
+            normalized_returns = self.value_normalizer.normalize(returns)
+
             critic_loss = (
-                (returns - values_pred) ** 2
+                (normalized_returns - values_pred) ** 2
             ).mean()
 
             # =================================================
@@ -394,6 +440,7 @@ class R_MAPPO:
         old_log_probs,
         returns,
         advantages,
+        dones,
         actor_hidden_states,
         critic_hidden_states
     ):
@@ -440,6 +487,17 @@ class R_MAPPO:
             seq_len
         )
 
+        # Hidden-state carry masks: step 0 of every chunk uses the
+        # stored rollout hidden (already correct); later steps reset
+        # the hidden wherever the previous step ended an episode.
+        dones = dones[:usable_steps].view(
+            num_sequences,
+            seq_len
+        )
+
+        masks = torch.ones_like(dones)
+        masks[:, 1:] = 1.0 - dones[:, :-1]
+
         actor_hidden = actor_hidden_states[
             :, :usable_steps, :
         ][:, ::seq_len, :]
@@ -455,6 +513,7 @@ class R_MAPPO:
             "old_log_probs": old_log_probs,
             "returns": returns,
             "advantages": advantages,
+            "masks": masks,
             "actor_hidden": actor_hidden,
             "critic_hidden": critic_hidden
         }
@@ -467,7 +526,8 @@ class R_MAPPO:
 
         torch.save({
             'actor': self.actor.state_dict(),
-            'critic': self.critic.state_dict()
+            'critic': self.critic.state_dict(),
+            'value_norm': self.value_normalizer.state_dict()
         }, path)
 
     # =========================================================
@@ -488,3 +548,11 @@ class R_MAPPO:
         self.critic.load_state_dict(
             checkpoint['critic']
         )
+
+        # Older checkpoints (pre-ValueNorm) have no stats; the critic
+        # they contain was trained on raw returns, so fresh statistics
+        # are the least-wrong option for continued use.
+        if 'value_norm' in checkpoint:
+            self.value_normalizer.load_state_dict(
+                checkpoint['value_norm']
+            )
